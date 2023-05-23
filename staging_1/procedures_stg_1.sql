@@ -134,7 +134,6 @@ BEGIN
 	SET insert_row_count = @@row_count;
 
 	SET metrics = (truncate_row_count, insert_row_count, NULL, NULL, NULL);
-	--CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_end(id_row, metrics);
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
 		"END",
 		process_id,
@@ -145,15 +144,23 @@ END;
 
 CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_landing_staging1_av_by_card_tokenized_full_merge()
 BEGIN
-	DECLARE id_row STRING;
+	DECLARE process_id STRING;
 	DECLARE insert_row_count INT64;
 
-	CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_start("usp_landing_staging1_av_by_card_tokenized_full_merge", id_row);
+	--CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_start("usp_landing_staging1_av_by_card_tokenized_full_merge", id_row);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
+		"START",
+		process_id,
+		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
+		NULL
+	);
 
 	MERGE `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS trg
 	USING
 	(
-		SELECT
+		WITH t1 AS 
+		(
+			SELECT
 			card_id,
 			title,
 			price_secondary,
@@ -175,10 +182,22 @@ BEGIN
 				exchange
 			ORDER BY scrap_date ASC
 			) AS rn
-		FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
-		WHERE rn = 1
+			FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
+		)
+		SELECT 
+			card_id,
+			title,
+			price_secondary,
+			location,
+			labels,
+			comment,
+			description,
+			exchange,
+			scrap_date
+		FROM t1
+		WHERE t1.rn = 1
 	) AS src
-	ON trg.card_id = src.card_id
+	ON trg.card_id = CAST(src.card_id AS STRING)
 	WHEN MATCHED
 	AND SHA256(CONCAT(IFNULL(src.title, ""),
 					IFNULL(src.price_secondary, ""),
@@ -350,4 +369,15 @@ BEGIN
 			CURRENT_TIMESTAMP(),
 			"N"
 		);
+
+	--get quantity of rows which have been inserted
+	SET insert_row_count = @@row_count;
+
+	SET metrics = (NULL, insert_row_count, NULL, NULL, NULL);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
+		"END",
+		process_id,
+		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
+		metrics
+	);
 END;
