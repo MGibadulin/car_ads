@@ -46,13 +46,13 @@ BEGIN
 	)
 	SELECT
 		GENERATE_UUID() AS row_id,
-		SHA256(CONCAT(COALESCE(title, ""),
-					COALESCE(price_secondary, ""),
-					COALESCE(location, ""),
-					COALESCE(labels, ""),
-					COALESCE(comment, ""),
-					COALESCE(description, ""),
-					COALESCE(exchange, ""))
+		SHA256(CONCAT(IFNULL(title, ""),
+					IFNULL(price_secondary, ""),
+					IFNULL(location, ""),
+					IFNULL(labels, ""),
+					IFNULL(comment, ""),
+					IFNULL(description, ""),
+					IFNULL(exchange, ""))
 				) AS row_hash,
 		CAST(card_id AS STRING) AS card_id,
 		CASE
@@ -168,28 +168,27 @@ BEGIN
 		FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
 		WHERE rn = 1
 	) AS src
-	-- need compare
 	ON trg.card_id = src.card_id
 	WHEN MATCHED
-	AND SHA256(CONCAT(COALESCE(src.title, ""),
-					COALESCE(src.price_secondary, ""),
-					COALESCE(src.location, ""),
-					COALESCE(src.labels, ""),
-					COALESCE(src.comment, ""),
-					COALESCE(src.description, ""),
-					COALESCE(src.exchange, ""))
+	AND SHA256(CONCAT(IFNULL(src.title, ""),
+					IFNULL(src.price_secondary, ""),
+					IFNULL(src.location, ""),
+					IFNULL(src.labels, ""),
+					IFNULL(src.comment, ""),
+					IFNULL(src.description, ""),
+					IFNULL(src.exchange, ""))
 				) <> trg.row_hash
 	THEN
 		INSERT
 		VALUES(
 			GENERATE_UUID(),
-			SHA256(CONCAT(COALESCE(src.title, ""),
-						COALESCE(src.price_secondary, ""),
-						COALESCE(src.location, ""),
-						COALESCE(src.labels, ""),
-						COALESCE(src.comment, ""),
-						COALESCE(src.description, ""),
-						COALESCE(src.exchange, ""))
+			SHA256(CONCAT(IFNULL(src.title, ""),
+						IFNULL(src.price_secondary, ""),
+						IFNULL(src.location, ""),
+						IFNULL(src.labels, ""),
+						IFNULL(src.comment, ""),
+						IFNULL(src.description, ""),
+						IFNULL(src.exchange, ""))
 					),
 			CAST(src.card_id AS STRING),
 			CASE
@@ -264,13 +263,13 @@ BEGIN
 		INSERT
 		VALUES(
 			GENERATE_UUID(),
-			SHA256(CONCAT(COALESCE(src.title, ""),
-						COALESCE(src.price_secondary, ""),
-						COALESCE(src.location, ""),
-						COALESCE(src.labels, ""),
-						COALESCE(src.comment, ""),
-						COALESCE(src.description, ""),
-						COALESCE(src.exchange, ""))
+			SHA256(CONCAT(IFNULL(src.title, ""),
+						IFNULL(src.price_secondary, ""),
+						IFNULL(src.location, ""),
+						IFNULL(src.labels, ""),
+						IFNULL(src.comment, ""),
+						IFNULL(src.description, ""),
+						IFNULL(src.exchange, ""))
 					),
 			CAST(src.card_id AS STRING),
 			CASE
@@ -340,5 +339,5 @@ BEGIN
 			src.scrap_date,
 			CURRENT_TIMESTAMP(),
 			"N"
-		)
+		);
 END;
