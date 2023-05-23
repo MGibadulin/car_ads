@@ -5,12 +5,17 @@
 CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_landing_staging1_av_by_card_tokenized_full_load()
 BEGIN 
 	-- start audit
-	DECLARE id_row STRING;
+	DECLARE process_id STRING;
 	DECLARE truncate_row_count INT64;
 	DECLARE insert_row_count INT64;
 	DECLARE metrics STRUCT <truncated INT64, inserted INT64, updated INT64, mark_as_deleted INT64, message STRING>;
 
-	CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_start("usp_landing_staging1_av_by_card_tokenized_full_load", id_row);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
+		"START",
+		process_id,
+		"usp_landing_staging1_av_by_card_tokenized_full_load", 
+		NULL
+	);
 
 	TRUNCATE TABLE `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`;
 
@@ -129,8 +134,13 @@ BEGIN
 	SET insert_row_count = @@row_count;
 
 	SET metrics = (truncate_row_count, insert_row_count, NULL, NULL, NULL);
-	CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_end(id_row, metrics);
-	
+	--CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_end(id_row, metrics);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
+		"END",
+		process_id,
+		"usp_landing_staging1_av_by_card_tokenized_full_load", 
+		metrics
+	);
 END;
 
 CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_landing_staging1_av_by_card_tokenized_full_merge()
