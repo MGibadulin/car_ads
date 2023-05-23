@@ -10,5 +10,5 @@ CREATE TABLE IF NOT EXISTS `paid-project-346208`.`meta_ds`.`audit_process_log`
 	updated 		INT64,
 	mark_as_deleted INT64,
 	message 		STRING,
-	owner_by 		STRING
+	owner_by 		STRING NOT NULL
 );
