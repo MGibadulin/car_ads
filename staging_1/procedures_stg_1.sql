@@ -146,8 +146,9 @@ CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_
 BEGIN
 	DECLARE process_id STRING;
 	DECLARE insert_row_count INT64;
-
-	--CALL `paid-project-346208`.`car_ads_ds_staging_test`.usp_audit_start("usp_landing_staging1_av_by_card_tokenized_full_merge", id_row);
+	DECLARE metrics STRUCT <truncated INT64, inserted INT64, updated INT64, mark_as_deleted INT64, message STRING>;
+	
+	-- start audit
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
 		"START",
 		process_id,
@@ -155,12 +156,23 @@ BEGIN
 		NULL
 	);
 
-	MERGE `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS trg
-	USING
+	-- cretae temp table without duplicats
+	CREATE TEMP TABLE lnd_wo_duplicats
+	AS
+	WITH src AS 
 	(
-		WITH t1 AS 
-		(
-			SELECT
+		SELECT
+		card_id,
+		title,
+		price_secondary,
+		location,
+		labels,
+		comment,
+		description,
+		exchange,
+		scrap_date,
+		ROW_NUMBER() OVER(
+		PARTITION BY 
 			card_id,
 			title,
 			price_secondary,
@@ -168,208 +180,148 @@ BEGIN
 			labels,
 			comment,
 			description,
-			exchange,
-			scrap_date,
-			ROW_NUMBER() OVER(
-			PARTITION BY 
-				card_id,
-				title,
-				price_secondary,
-				location,
-				labels,
-				comment,
-				description,
-				exchange
-			ORDER BY scrap_date ASC
-			) AS rn
-			FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
-		)
-		SELECT 
-			card_id,
-			title,
-			price_secondary,
-			location,
-			labels,
-			comment,
-			description,
-			exchange,
-			scrap_date
-		FROM t1
-		WHERE t1.rn = 1
-	) AS src
-	ON trg.card_id = CAST(src.card_id AS STRING)
-	WHEN MATCHED
-	AND SHA256(CONCAT(IFNULL(src.title, ""),
+			exchange
+		ORDER BY scrap_date ASC
+		) AS rn
+		FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
+	)
+	SELECT 
+		card_id,
+		title,
+		price_secondary,
+		location,
+		labels,
+		comment,
+		description,
+		exchange,
+		scrap_date
+	FROM src
+	WHERE src.rn = 1;
+
+	-- get new rows with card_id that were not in the stage_1 table
+	CREATE TEMP TABLE row_for_insert 
+	AS
+	SELECT 
+		lnd.card_id,
+		lnd.title,
+		lnd.price_secondary,
+		lnd.location,
+		lnd.labels,
+		lnd.comment,
+		lnd.description,
+		lnd.exchange,
+		lnd.scrap_date
+	FROM lnd_wo_duplicats AS lnd
+	LEFT JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
+	ON CAST(lnd.card_id AS STRING) = stg.card_id
+	WHERE stg.card_id IS NULL;
+	
+	-- get rows that were already in the stage_1 table, but with changed fields
+	INSERT INTO row_for_insert
+	SELECT 
+		lnd.card_id,
+		lnd.title,
+		lnd.price_secondary,
+		lnd.location,
+		lnd.labels,
+		lnd.comment,
+		lnd.description,
+		lnd.exchange,
+		lnd.scrap_date
+	FROM lnd_wo_duplicats AS lnd
+	INNER JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
+	ON CAST(lnd.card_id AS STRING) = stg.card_id
+	WHERE SHA256(CONCAT(IFNULL(lnd.title, ""),
+					IFNULL(lnd.price_secondary, ""),
+					IFNULL(lnd.location, ""),
+					IFNULL(lnd.labels, ""),
+					IFNULL(lnd.comment, ""),
+					IFNULL(lnd.description, ""),
+					IFNULL(lnd.exchange, ""))
+				) <> stg.row_hash;
+
+	-- tokinize car ads and insert stage_1
+	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
+	SELECT
+		GENERATE_UUID(),
+		SHA256(CONCAT(IFNULL(src.title, ""),
 					IFNULL(src.price_secondary, ""),
 					IFNULL(src.location, ""),
 					IFNULL(src.labels, ""),
 					IFNULL(src.comment, ""),
 					IFNULL(src.description, ""),
 					IFNULL(src.exchange, ""))
-				) <> trg.row_hash
-	THEN
-		INSERT
-		VALUES(
-			GENERATE_UUID(),
-			SHA256(CONCAT(IFNULL(src.title, ""),
-						IFNULL(src.price_secondary, ""),
-						IFNULL(src.location, ""),
-						IFNULL(src.labels, ""),
-						IFNULL(src.comment, ""),
-						IFNULL(src.description, ""),
-						IFNULL(src.exchange, ""))
-					),
-			CAST(src.card_id AS STRING),
-			CASE
-				WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN 'Lada (ВАЗ)'
-				WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN 'Alfa Romeo'
-				WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN 'Dongfeng Honda'
-				WHEN split(src.title, ' ')[1] LIKE 'Great' THEN 'Great Wall'
-				WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN 'Iran Khodro'
-				WHEN split(src.title, ' ')[1] LIKE 'Land' THEN 'Land Rover'
-				ELSE split(src.title, ' ')[1]
-			END,
-			CASE
-				WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
-				ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
-			END,
-			CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
-			CAST(REGEXP_EXTRACT(REPLACE(src.price_secondary, ' ', ''), r'≈(\d+)\$') AS INT),
-			REGEXP_EXTRACT(src.description, r',\s(\S+),.+'),
-			CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
-			REGEXP_EXTRACT(src.description, r'\| ([А-Яа-я0-9. ]+)'),
-			CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
-			CASE
-				WHEN INSTR(src.description, 'Запас хода') <> 0 THEN 'Electric'
-				ELSE split(src.description, ',')[3]	
-			END,
-			CASE
-				WHEN INSTR(src.exchange, 'Возможен обмен') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Возможен обмен с моей доплатой') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Возможен обмен с вашей доплатой') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Обмен не интересует') <> 0 THEN 'N'
-				ELSE 'N'
-			END,
-			CASE 
-				WHEN INSTR(src.labels, 'TOP') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'VIN') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'аварийный') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'на запчасти') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE 
-				WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[0])
-				WHEN src.location IS NULL THEN ''
-				ELSE src.location
-			END,
-			CASE 
-				WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[1])
-				ELSE ''
-			END,
-			CASE 
-				WHEN src.comment IS NULL THEN ''
-				ELSE src.comment
-			END,
-			src.scrap_date,
-			CURRENT_TIMESTAMP(),
-			"N"
-		)
-	WHEN NOT MATCHED THEN
-		INSERT
-		VALUES(
-			GENERATE_UUID(),
-			SHA256(CONCAT(IFNULL(src.title, ""),
-						IFNULL(src.price_secondary, ""),
-						IFNULL(src.location, ""),
-						IFNULL(src.labels, ""),
-						IFNULL(src.comment, ""),
-						IFNULL(src.description, ""),
-						IFNULL(src.exchange, ""))
-					),
-			CAST(src.card_id AS STRING),
-			CASE
-				WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN 'Lada (ВАЗ)'
-				WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN 'Alfa Romeo'
-				WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN 'Dongfeng Honda'
-				WHEN split(src.title, ' ')[1] LIKE 'Great' THEN 'Great Wall'
-				WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN 'Iran Khodro'
-				WHEN split(src.title, ' ')[1] LIKE 'Land' THEN 'Land Rover'
-				ELSE split(src.title, ' ')[1]
-			END,
-			CASE
-				WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
-				WHEN split(src.title, ' ')[1] LIKE 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
-				ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
-			END,
-			CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
-			CAST(REGEXP_EXTRACT(REPLACE(src.price_secondary, ' ', ''), r'≈(\d+)\$') AS INT),
-			REGEXP_EXTRACT(src.description, r',\s(\S+),.+'),
-			CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
-			REGEXP_EXTRACT(src.description, r'\| ([А-Яа-я0-9. ]+)'),
-			CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
-			CASE 
-				WHEN INSTR(src.description, 'Запас хода') <> 0 THEN 'Electric'
-				ELSE split(src.description, ',')[3]	
-			END,
-			CASE 
-				WHEN INSTR(src.exchange, 'Возможен обмен') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Возможен обмен с моей доплатой') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Возможен обмен с вашей доплатой') <> 0 THEN 'Y'
-				WHEN INSTR(src.exchange, 'Обмен не интересует') <> 0 THEN 'N'
-				ELSE 'N'
-			END,
-			CASE 
-				WHEN INSTR(src.labels, 'TOP') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'VIN') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'аварийный') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE
-				WHEN INSTR(src.labels, 'на запчасти') <> 0 THEN 'Y'
-				ELSE 'N'
-			END,
-			CASE 
-				WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[0])
-				WHEN src.location IS NULL THEN ''
-				ELSE src.location
-			END,
-			CASE 
-				WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[1])
-				ELSE ''
-			END,	
-			CASE 
-				WHEN src.comment IS NULL THEN ''
-				ELSE src.comment
-			END,
-			src.scrap_date,
-			CURRENT_TIMESTAMP(),
-			"N"
-		);
-
+				),
+		CAST(src.card_id AS STRING),
+		CASE
+			WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN 'Lada (ВАЗ)'
+			WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN 'Alfa Romeo'
+			WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN 'Dongfeng Honda'
+			WHEN split(src.title, ' ')[1] LIKE 'Great' THEN 'Great Wall'
+			WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN 'Iran Khodro'
+			WHEN split(src.title, ' ')[1] LIKE 'Land' THEN 'Land Rover'
+			ELSE split(src.title, ' ')[1]
+		END,
+		CASE
+			WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
+			WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
+			WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
+			WHEN split(src.title, ' ')[1] LIKE 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
+			WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
+			WHEN split(src.title, ' ')[1] LIKE 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
+			ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
+		END,
+		CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
+		CAST(REGEXP_EXTRACT(REPLACE(src.price_secondary, ' ', ''), r'≈(\d+)\$') AS INT),
+		REGEXP_EXTRACT(src.description, r',\s(\S+),.+'),
+		CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
+		REGEXP_EXTRACT(src.description, r'\| ([А-Яа-я0-9. ]+)'),
+		CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
+		CASE
+			WHEN INSTR(src.description, 'Запас хода') <> 0 THEN 'Electric'
+			ELSE split(src.description, ',')[3]	
+		END,
+		CASE
+			WHEN INSTR(src.exchange, 'Возможен обмен') <> 0 THEN 'Y'
+			WHEN INSTR(src.exchange, 'Возможен обмен с моей доплатой') <> 0 THEN 'Y'
+			WHEN INSTR(src.exchange, 'Возможен обмен с вашей доплатой') <> 0 THEN 'Y'
+			WHEN INSTR(src.exchange, 'Обмен не интересует') <> 0 THEN 'N'
+			ELSE 'N'
+		END,
+		CASE 
+			WHEN INSTR(src.labels, 'TOP') <> 0 THEN 'Y'
+			ELSE 'N'
+		END,
+		CASE
+			WHEN INSTR(src.labels, 'VIN') <> 0 THEN 'Y'
+			ELSE 'N'
+		END,
+		CASE
+			WHEN INSTR(src.labels, 'аварийный') <> 0 THEN 'Y'
+			ELSE 'N'
+		END,
+		CASE
+			WHEN INSTR(src.labels, 'на запчасти') <> 0 THEN 'Y'
+			ELSE 'N'
+		END,
+		CASE 
+			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[0])
+			WHEN src.location IS NULL THEN ''
+			ELSE src.location
+		END,
+		CASE 
+			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[1])
+			ELSE ''
+		END,
+		CASE 
+			WHEN src.comment IS NULL THEN ''
+			ELSE src.comment
+		END,
+		src.scrap_date,
+		CURRENT_TIMESTAMP(),
+		"N"
+	FROM row_for_insert AS src;
+	
 	--get quantity of rows which have been inserted
 	SET insert_row_count = @@row_count;
 
@@ -380,4 +332,5 @@ BEGIN
 		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
 		metrics
 	);
+	DROP TABLE lnd_wo_duplicats;
 END;
