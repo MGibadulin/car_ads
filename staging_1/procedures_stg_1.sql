@@ -1,7 +1,7 @@
 -- Transform data from landing to staging 1
 
 
--- Tokenization
+-- Full load and tokenize from landing to staging_1
 CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_landing_staging1_av_by_card_tokenized_full_load()
 BEGIN 
 	-- start audit
@@ -142,6 +142,7 @@ BEGIN
 	);
 END;
 
+-- Full_merge and tokenize from landing to staging_1
 CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_landing_staging1_av_by_card_tokenized_full_merge()
 BEGIN
 	DECLARE process_id STRING;
@@ -238,7 +239,10 @@ BEGIN
 					IFNULL(lnd.comment, ""),
 					IFNULL(lnd.description, ""),
 					IFNULL(lnd.exchange, ""))
-				) <> stg.row_hash;
+				) NOT IN (SELECT row_hash 
+							FROM `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg_inner
+							WHERE  stg.card_id = stg_inner.card_id);
+	
 
 	-- tokinize car ads and insert stage_1
 	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
