@@ -61,21 +61,21 @@ BEGIN
 				) AS row_hash,
 		CAST(card_id AS STRING) AS card_id,
 		CASE
-			WHEN split(title, ' ')[1] LIKE 'Lada' THEN 'Lada (ВАЗ)'
-			WHEN split(title, ' ')[1] LIKE 'Alfa' THEN 'Alfa Romeo'
-			WHEN split(title, ' ')[1] LIKE 'Dongfeng' THEN 'Dongfeng Honda'
-			WHEN split(title, ' ')[1] LIKE 'Great' THEN 'Great Wall'
-			WHEN split(title, ' ')[1] LIKE 'Iran' THEN 'Iran Khodro'
-			WHEN split(title, ' ')[1] LIKE 'Land' THEN 'Land Rover'
+			WHEN split(title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
+			WHEN split(title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
+			WHEN split(title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
+			WHEN split(title, ' ')[1] = 'Great' THEN 'Great Wall'
+			WHEN split(title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
+			WHEN split(title, ' ')[1] = 'Land' THEN 'Land Rover'
 			ELSE split(title, ' ')[1]
 		END AS brand,
 		CASE
-			WHEN split(title, ' ')[1] LIKE 'Lada' THEN REGEXP_EXTRACT(title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-			WHEN split(title, ' ')[1] LIKE 'Alfa' THEN REGEXP_EXTRACT(title, r'Продажа Alfa Romeo (.+)[,]')
-			WHEN split(title, ' ')[1] LIKE 'Dongfeng' THEN REGEXP_EXTRACT(title, r'Продажа Dongfeng Honda (.+)[,]')
-			WHEN split(title, ' ')[1] LIKE 'Great' THEN REGEXP_EXTRACT(title, r'Продажа Great Wall (.+)[,]')
-			WHEN split(title, ' ')[1] LIKE 'Iran' THEN REGEXP_EXTRACT(title, r'Продажа Iran Khodro (.+)[,]')
-			WHEN split(title, ' ')[1] LIKE 'Land' THEN REGEXP_EXTRACT(title, r'Продажа Land Rover (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(title, r'Продажа Alfa Romeo (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(title, r'Продажа Dongfeng Honda (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(title, r'Продажа Great Wall (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(title, r'Продажа Iran Khodro (.+)[,]')
+			WHEN split(title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END AS model,
 		CAST(REGEXP_EXTRACT(description, r'^(\d{4}) г.,') AS INT) AS year,
@@ -258,21 +258,21 @@ BEGIN
 				),
 		CAST(src.card_id AS STRING),
 		CASE
-			WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN 'Lada (ВАЗ)'
-			WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN 'Alfa Romeo'
-			WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN 'Dongfeng Honda'
-			WHEN split(src.title, ' ')[1] LIKE 'Great' THEN 'Great Wall'
-			WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN 'Iran Khodro'
-			WHEN split(src.title, ' ')[1] LIKE 'Land' THEN 'Land Rover'
+			WHEN split(src.title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
+			WHEN split(src.title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
+			WHEN split(src.title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
+			WHEN split(src.title, ' ')[1] = 'Great' THEN 'Great Wall'
+			WHEN split(src.title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
+			WHEN split(src.title, ' ')[1] = 'Land' THEN 'Land Rover'
 			ELSE split(src.title, ' ')[1]
 		END,
 		CASE
-			WHEN split(src.title, ' ')[1] LIKE 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-			WHEN split(src.title, ' ')[1] LIKE 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
-			WHEN split(src.title, ' ')[1] LIKE 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
-			WHEN split(src.title, ' ')[1] LIKE 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
-			WHEN split(src.title, ' ')[1] LIKE 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
-			WHEN split(src.title, ' ')[1] LIKE 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
+			WHEN split(src.title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END,
 		CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
@@ -336,5 +336,5 @@ BEGIN
 		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
 		metrics
 	);
-	DROP TABLE lnd_wo_duplicats;
+
 END;
