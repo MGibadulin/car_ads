@@ -16,7 +16,7 @@ BEGIN
 		"usp_landing_staging1_av_by_card_tokenized_full_load", 
 		NULL
 	);
-
+	-- !!! добавить логгирование евентов
 	TRUNCATE TABLE `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`;
 
 	--get quantity of rows which will be truncated
@@ -156,7 +156,7 @@ BEGIN
 		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
 		NULL
 	);
-
+	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка
 	-- cretae temp table without duplicats
 	CREATE TEMP TABLE lnd_wo_duplicats
 	AS
@@ -199,6 +199,7 @@ BEGIN
 	FROM src
 	WHERE src.rn = 1;
 
+	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка	
 	-- get new rows with card_id that were not in the stage_1 table
 	CREATE TEMP TABLE row_for_insert 
 	AS
@@ -211,12 +212,13 @@ BEGIN
 		lnd.comment,
 		lnd.description,
 		lnd.exchange,
-		lnd.scrap_date
+		lnd.scrap_date -- добавить "INSERTED AS oper"
 	FROM lnd_wo_duplicats AS lnd
 	LEFT JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
 	ON CAST(lnd.card_id AS STRING) = stg.card_id
 	WHERE stg.card_id IS NULL;
 	
+	--! добавить в INSERT колонки, куда вставляем 
 	-- get rows that were already in the stage_1 table, but with changed fields
 	INSERT INTO row_for_insert
 	SELECT 
@@ -228,7 +230,7 @@ BEGIN
 		lnd.comment,
 		lnd.description,
 		lnd.exchange,
-		lnd.scrap_date
+		lnd.scrap_date -- добавить "UPDATED AS oper"
 	FROM lnd_wo_duplicats AS lnd
 	INNER JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
 	ON CAST(lnd.card_id AS STRING) = stg.card_id
@@ -243,7 +245,9 @@ BEGIN
 							FROM `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg_inner
 							WHERE  stg.card_id = stg_inner.card_id);
 	
-
+	-- ! SAFECAST использовать
+	-- ! создать временную таблицу для токенизированных записей
+	-- ! вторым этапом залить данные в Stg_1. с проверкой уловий на bad data и записать в евент_лог
 	-- tokinize car ads and insert stage_1
 	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
 	SELECT
