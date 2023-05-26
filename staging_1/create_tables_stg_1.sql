@@ -23,6 +23,6 @@ CREATE TABLE IF NOT EXISTS `paid-project-346208`.`car_ads_ds_staging_test`.`cars
 	comment			STRING NOT NULL,
 	scrap_date		TIMESTAMP NOT NULL,
 	modified_date	TIMESTAMP NOT NULL,
-	deleted			STRING NOT NULL,
+	deleted			STRING NOT NULL, -- add `oper` field
 	PRIMARY KEY(row_id) NOT ENFORCED
 );
