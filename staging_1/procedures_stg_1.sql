@@ -16,11 +16,11 @@ BEGIN
 		"usp_landing_staging1_av_by_card_tokenized_full_load", 
 		NULL
 	);
-	-- !!! добавить логгирование евентов
+
 	TRUNCATE TABLE `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`;
 
 	--get quantity of rows which will be truncated
-	SET truncate_row_count= @@row_count;
+	SET truncate_row_count = @@row_count;
 
 	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
 	WITH t1 AS
@@ -150,14 +150,12 @@ BEGIN
 	DECLARE metrics STRUCT <truncated INT64, inserted INT64, updated INT64, mark_as_deleted INT64, message STRING>;
 	
 	-- start audit
-	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
-		"START",
-		process_id,
-		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
-		NULL
-	);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`("START", process_id, "usp_landing_staging1_av_by_card_tokenized_full_merge", NULL);
+
 	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка
 	-- cretae temp table without duplicats
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Deduplicate source data", "start");
+
 	CREATE TEMP TABLE lnd_wo_duplicats
 	AS
 	WITH src AS 
@@ -199,8 +197,12 @@ BEGIN
 	FROM src
 	WHERE src.rn = 1;
 
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Deduplicate source data", "end");
+
 	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка	
 	-- get new rows with card_id that were not in the stage_1 table
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract new records", "start");
+
 	CREATE TEMP TABLE row_for_insert 
 	AS
 	SELECT 
@@ -218,8 +220,12 @@ BEGIN
 	ON CAST(lnd.card_id AS STRING) = stg.card_id
 	WHERE stg.card_id IS NULL;
 	
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract new records", "end");
+
 	--! добавить в INSERT колонки, куда вставляем 
 	-- get rows that were already in the stage_1 table, but with changed fields
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract updated records", "start");
+
 	INSERT INTO row_for_insert
 	SELECT 
 		lnd.card_id,
@@ -245,10 +251,14 @@ BEGIN
 							FROM `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg_inner
 							WHERE  stg.card_id = stg_inner.card_id);
 	
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract updated records", "end");
+
 	-- ! SAFECAST использовать
 	-- ! создать временную таблицу для токенизированных записей
 	-- ! вторым этапом залить данные в Stg_1. с проверкой уловий на bad data и записать в евент_лог
 	-- tokinize car ads and insert stage_1
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform & Load data", "start");
+
 	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
 	SELECT
 		GENERATE_UUID(),
@@ -333,12 +343,9 @@ BEGIN
 	--get quantity of rows which have been inserted
 	SET insert_row_count = @@row_count;
 
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform & Load data", "end");
+
 	SET metrics = (NULL, insert_row_count, NULL, NULL, NULL);
-	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`(
-		"END",
-		process_id,
-		"usp_landing_staging1_av_by_card_tokenized_full_merge", 
-		metrics
-	);
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`("END",process_id,"usp_landing_staging1_av_by_card_tokenized_full_merge", metrics);
 
 END;
