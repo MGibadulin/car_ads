@@ -59,7 +59,7 @@ BEGIN
 					IFNULL(description, ""),
 					IFNULL(exchange, ""))
 				) AS row_hash,
-		CAST(card_id AS STRING) AS card_id,
+		SAFE_CAST(card_id AS STRING) AS card_id,
 		CASE
 			WHEN split(title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
 			WHEN split(title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
@@ -78,12 +78,12 @@ BEGIN
 			WHEN split(title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END AS model,
-		CAST(REGEXP_EXTRACT(description, r'^(\d{4}) г.,') AS INT) AS year,
-		CAST(REGEXP_EXTRACT(REPLACE(price_secondary, ' ', ''), r'≈(\d+)\$') AS INT) AS price,
+		SAFE_CAST(REGEXP_EXTRACT(description, r'^(\d{4}) г.,') AS INT) AS year,
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(price_secondary, ' ', ''), r'≈(\d+)\$') AS INT) AS price,
 		REGEXP_EXTRACT(description, r',\s(\S+),.+') AS transmission,
-		CAST(REPLACE(REGEXP_EXTRACT(description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT) AS mileage,
+		SAFE_CAST(REPLACE(REGEXP_EXTRACT(description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT) AS mileage,
 		REGEXP_EXTRACT(description, r'\| ([А-Яа-я0-9. ]+)') AS body,
-		CAST(REGEXP_EXTRACT(REPLACE(split(description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100 AS engine_vol,
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(split(description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100 AS engine_vol,
 		CASE 
 			WHEN INSTR(description, 'Запас хода') <> 0 THEN 'Electric'
 			ELSE split(description, ',')[3]	
@@ -152,12 +152,33 @@ BEGIN
 	-- start audit
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`("START", process_id, "usp_landing_staging1_av_by_card_tokenized_full_merge", NULL);
 
-	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка
-	-- cretae temp table without duplicats
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Deduplicate source data", "start");
 
+	-- cretae temp table without duplicats
 	CREATE TEMP TABLE lnd_wo_duplicats
-	AS
+	(
+		card_id 		STRING NOT NULL,
+		title 			STRING,
+		price_secondary STRING,
+		location 		STRING,
+		labels 			STRING,
+		comment 		STRING,
+		description 	STRING,
+		exchange 		STRING,
+		scrap_date 		TIMESTAMP
+	);
+	--  insert deduplicated data 
+	INSERT INTO lnd_wo_duplicats (
+		card_id, 
+		title,
+		price_secondary,
+		location,
+		labels,
+		comment,
+		description,
+		exchange,
+		scrap_date
+	)
 	WITH src AS 
 	(
 		SELECT
@@ -185,7 +206,7 @@ BEGIN
 		FROM `paid-project-346208`.`car_ads_ds_landing`.`lnd_cars-av-by_card_300`
 	)
 	SELECT 
-		card_id,
+		SAFE_CAST(card_id AS STRING) AS card_id,
 		title,
 		price_secondary,
 		location,
@@ -199,12 +220,35 @@ BEGIN
 
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Deduplicate source data", "end");
 
-	-- ! разбить на DML и DDL/ Отедельно создание таблицы отдельно вставка	
 	-- get new rows with card_id that were not in the stage_1 table
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract new records", "start");
 
-	CREATE TEMP TABLE row_for_insert 
-	AS
+	CREATE TEMP TABLE row_for_insert
+	(
+		card_id 		STRING NOT NULL,
+		title 			STRING,
+		price_secondary STRING,
+		location 		STRING,
+		labels 			STRING,
+		comment 		STRING,
+		description 	STRING,
+		exchange 		STRING,
+		scrap_date 		TIMESTAMP,
+		oper 			STRING
+	);
+	-- insert new records
+	INSERT INTO row_for_insert (
+		card_id, 
+		title,
+		price_secondary,
+		location,
+		labels,
+		comment,
+		description,
+		exchange,
+		scrap_date,
+		oper
+	)
 	SELECT 
 		lnd.card_id,
 		lnd.title,
@@ -214,19 +258,30 @@ BEGIN
 		lnd.comment,
 		lnd.description,
 		lnd.exchange,
-		lnd.scrap_date -- добавить "INSERTED AS oper"
+		lnd.scrap_date,
+		"INSERTED" AS oper
 	FROM lnd_wo_duplicats AS lnd
 	LEFT JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
-	ON CAST(lnd.card_id AS STRING) = stg.card_id
+	ON lnd.card_id = stg.card_id
 	WHERE stg.card_id IS NULL;
 	
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract new records", "end");
 
-	--! добавить в INSERT колонки, куда вставляем 
 	-- get rows that were already in the stage_1 table, but with changed fields
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract updated records", "start");
 
-	INSERT INTO row_for_insert
+	INSERT INTO row_for_insert (
+		card_id, 
+		title,
+		price_secondary,
+		location,
+		labels,
+		comment,
+		description,
+		exchange,
+		scrap_date,
+		oper
+	)
 	SELECT 
 		lnd.card_id,
 		lnd.title,
@@ -236,10 +291,11 @@ BEGIN
 		lnd.comment,
 		lnd.description,
 		lnd.exchange,
-		lnd.scrap_date -- добавить "UPDATED AS oper"
+		lnd.scrap_date,
+		"UPDATED" As oper
 	FROM lnd_wo_duplicats AS lnd
 	INNER JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
-	ON CAST(lnd.card_id AS STRING) = stg.card_id
+	ON lnd.card_id = stg.card_id
 	WHERE SHA256(CONCAT(IFNULL(lnd.title, ""),
 					IFNULL(lnd.price_secondary, ""),
 					IFNULL(lnd.location, ""),
@@ -253,7 +309,6 @@ BEGIN
 	
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract updated records", "end");
 
-	-- ! SAFECAST использовать
 	-- ! создать временную таблицу для токенизированных записей
 	-- ! вторым этапом залить данные в Stg_1. с проверкой уловий на bad data и записать в евент_лог
 	-- tokinize car ads and insert stage_1
@@ -270,7 +325,7 @@ BEGIN
 					IFNULL(src.description, ""),
 					IFNULL(src.exchange, ""))
 				),
-		CAST(src.card_id AS STRING),
+		src.card_id,
 		CASE
 			WHEN split(src.title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
 			WHEN split(src.title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
@@ -289,12 +344,12 @@ BEGIN
 			WHEN split(src.title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END,
-		CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
-		CAST(REGEXP_EXTRACT(REPLACE(src.price_secondary, ' ', ''), r'≈(\d+)\$') AS INT),
+		SAFE_CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(src.price_secondary, ' ', ''), r'≈(\d+)\$') AS INT),
 		REGEXP_EXTRACT(src.description, r',\s(\S+),.+'),
-		CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
+		SAFE_CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
 		REGEXP_EXTRACT(src.description, r'\| ([А-Яа-я0-9. ]+)'),
-		CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
 		CASE
 			WHEN INSTR(src.description, 'Запас хода') <> 0 THEN 'Electric'
 			ELSE split(src.description, ',')[3]	
