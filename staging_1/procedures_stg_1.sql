@@ -165,7 +165,8 @@ BEGIN
 		comment 		STRING,
 		description 	STRING,
 		exchange 		STRING,
-		scrap_date 		TIMESTAMP
+		scrap_date 		TIMESTAMP,
+		row_hash		BYTES(32) NOT NULL
 	);
 	--  insert deduplicated data 
 	INSERT INTO lnd_wo_duplicats (
@@ -177,7 +178,8 @@ BEGIN
 		comment,
 		description,
 		exchange,
-		scrap_date
+		scrap_date,
+		row_hash
 	)
 	WITH src AS 
 	(
@@ -214,7 +216,15 @@ BEGIN
 		comment,
 		description,
 		exchange,
-		scrap_date
+		scrap_date,
+		SHA256(CONCAT(IFNULL(title, ""),
+					IFNULL(price_secondary, ""),
+					IFNULL(location, ""),
+					IFNULL(labels, ""),
+					IFNULL(comment, ""),
+					IFNULL(description, ""),
+					IFNULL(exchange, ""))
+				) AS row_hash
 	FROM src
 	WHERE src.rn = 1;
 
@@ -234,6 +244,7 @@ BEGIN
 		description 	STRING,
 		exchange 		STRING,
 		scrap_date 		TIMESTAMP,
+		row_hash		BYTES(32) NOT NULL,
 		oper 			STRING
 	);
 	-- insert new records
@@ -247,6 +258,7 @@ BEGIN
 		description,
 		exchange,
 		scrap_date,
+		row_hash,
 		oper
 	)
 	SELECT 
@@ -259,6 +271,7 @@ BEGIN
 		lnd.description,
 		lnd.exchange,
 		lnd.scrap_date,
+		lnd.row_hash,
 		"INSERTED" AS oper
 	FROM lnd_wo_duplicats AS lnd
 	LEFT JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
@@ -296,14 +309,7 @@ BEGIN
 	FROM lnd_wo_duplicats AS lnd
 	INNER JOIN `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg
 	ON lnd.card_id = stg.card_id
-	WHERE SHA256(CONCAT(IFNULL(lnd.title, ""),
-					IFNULL(lnd.price_secondary, ""),
-					IFNULL(lnd.location, ""),
-					IFNULL(lnd.labels, ""),
-					IFNULL(lnd.comment, ""),
-					IFNULL(lnd.description, ""),
-					IFNULL(lnd.exchange, ""))
-				) NOT IN (SELECT row_hash 
+	WHERE lnd.row_hash NOT IN (SELECT row_hash 
 							FROM `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized` AS stg_inner
 							WHERE  stg.card_id = stg_inner.card_id);
 	
@@ -317,14 +323,7 @@ BEGIN
 	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
 	SELECT
 		GENERATE_UUID(),
-		SHA256(CONCAT(IFNULL(src.title, ""),
-					IFNULL(src.price_secondary, ""),
-					IFNULL(src.location, ""),
-					IFNULL(src.labels, ""),
-					IFNULL(src.comment, ""),
-					IFNULL(src.description, ""),
-					IFNULL(src.exchange, ""))
-				),
+		src.row_hash,
 		src.card_id,
 		CASE
 			WHEN split(src.title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
