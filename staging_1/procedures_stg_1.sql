@@ -61,21 +61,21 @@ BEGIN
 				) AS row_hash,
 		SAFE_CAST(card_id AS STRING) AS card_id,
 		CASE
-			WHEN split(title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
-			WHEN split(title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
-			WHEN split(title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
-			WHEN split(title, ' ')[1] = 'Great' THEN 'Great Wall'
-			WHEN split(title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
-			WHEN split(title, ' ')[1] = 'Land' THEN 'Land Rover'
-			ELSE split(title, ' ')[1]
+			WHEN SPLIT(title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
+			WHEN SPLIT(title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
+			WHEN SPLIT(title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
+			WHEN SPLIT(title, ' ')[1] = 'Great' THEN 'Great Wall'
+			WHEN SPLIT(title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
+			WHEN SPLIT(title, ' ')[1] = 'Land' THEN 'Land Rover'
+			ELSE SPLIT(title, ' ')[1]
 		END AS brand,
 		CASE
-			WHEN split(title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-			WHEN split(title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(title, r'Продажа Alfa Romeo (.+)[,]')
-			WHEN split(title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(title, r'Продажа Dongfeng Honda (.+)[,]')
-			WHEN split(title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(title, r'Продажа Great Wall (.+)[,]')
-			WHEN split(title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(title, r'Продажа Iran Khodro (.+)[,]')
-			WHEN split(title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(title, r'Продажа Land Rover (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(title, r'Продажа Alfa Romeo (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(title, r'Продажа Dongfeng Honda (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(title, r'Продажа Great Wall (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(title, r'Продажа Iran Khodro (.+)[,]')
+			WHEN SPLIT(title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END AS model,
 		SAFE_CAST(REGEXP_EXTRACT(description, r'^(\d{4}) г.,') AS INT) AS year,
@@ -83,10 +83,10 @@ BEGIN
 		REGEXP_EXTRACT(description, r',\s(\S+),.+') AS transmission,
 		SAFE_CAST(REPLACE(REGEXP_EXTRACT(description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT) AS mileage,
 		REGEXP_EXTRACT(description, r'\| ([А-Яа-я0-9. ]+)') AS body,
-		SAFE_CAST(REGEXP_EXTRACT(REPLACE(split(description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100 AS engine_vol,
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(SPLIT(description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100 AS engine_vol,
 		CASE 
 			WHEN INSTR(description, 'Запас хода') <> 0 THEN 'Electric'
-			ELSE split(description, ',')[3]	
+			ELSE SPLIT(description, ',')[3]	
 		END AS fuel,
 		CASE 
 			WHEN INSTR(exchange, 'Возможен обмен') <> 0 THEN 'Y'
@@ -112,12 +112,12 @@ BEGIN
 			ELSE 'N'
 		END AS for_spare,
 		CASE 
-			WHEN INSTR(location, ',') <> 0 THEN TRIM(split(location, ',')[0])
+			WHEN INSTR(location, ',') <> 0 THEN TRIM(SPLIT(location, ',')[0])
 			WHEN location IS NULL THEN ''
 			ELSE location
 		END AS city,
 		CASE 
-			WHEN INSTR(location, ',') <> 0 THEN TRIM(split(location, ',')[1])
+			WHEN INSTR(location, ',') <> 0 THEN TRIM(SPLIT(location, ',')[1])
 			ELSE ''
 		END AS region,	
 		CASE 
@@ -147,6 +147,7 @@ CREATE OR REPLACE PROCEDURE `paid-project-346208`.`car_ads_ds_staging_test`.usp_
 BEGIN
 	DECLARE process_id STRING;
 	DECLARE insert_row_count INT64;
+	DECLARE processed_row_count INT64;
 	DECLARE metrics STRUCT <truncated INT64, inserted INT64, updated INT64, mark_as_deleted INT64, message STRING>;
 	
 	-- start audit
@@ -315,32 +316,82 @@ BEGIN
 	
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Extract updated records", "end");
 
-	-- ! создать временную таблицу для токенизированных записей
-	-- ! вторым этапом залить данные в Stg_1. с проверкой уловий на bad data и записать в евент_лог
-	-- tokinize car ads and insert stage_1
-	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform & Load data", "start");
+	-- tokinize car ads
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform data", "start");
 
-	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`
+	CREATE TEMP TABLE card_tokenized(
+		row_id			STRING NOT NULL,
+		row_hash		BYTES(32) NOT NULL,
+		card_id			STRING NOT NULL,
+		brand			STRING NOT NULL,
+		model			STRING NOT NULL,
+		year			INT64 NOT NULL,
+		price			INT64 NOT NULL,
+		transmission 	STRING NOT NULL,
+		mileage			INT64 NOT NULL,
+		body			STRING NOT NULL,
+		engine_vol		INT64 NOT NULL,
+		fuel 			STRING NOT NULL,
+		exchange		STRING NOT NULL,
+		top				STRING NOT NULL,
+		vin				STRING NOT NULL,
+		crahed			STRING NOT NULL,
+		for_spare		STRING NOT NULL,
+		city			STRING NOT NULL,
+		region			STRING NOT NULL,
+		comment			STRING NOT NULL,
+		scrap_date		TIMESTAMP NOT NULL,
+		modified_date	TIMESTAMP NOT NULL,
+		deleted			STRING NOT NULL,
+		oper			STRING NOT NULL
+	);
+	
+	INSERT INTO card_tokenized (
+		row_id,
+		row_hash,
+		card_id,
+		brand,
+		model,
+		year,
+		price,
+		transmission,
+		mileage,
+		body,
+		engine_vol,
+		fuel,
+		exchange,
+		top,
+		vin,
+		crahed,
+		for_spare,
+		city,
+		region,
+		comment,
+		scrap_date,
+		modified_date,
+		deleted,
+		oper
+	)
 	SELECT
 		GENERATE_UUID(),
 		src.row_hash,
 		src.card_id,
 		CASE
-			WHEN split(src.title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
-			WHEN split(src.title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
-			WHEN split(src.title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
-			WHEN split(src.title, ' ')[1] = 'Great' THEN 'Great Wall'
-			WHEN split(src.title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
-			WHEN split(src.title, ' ')[1] = 'Land' THEN 'Land Rover'
-			ELSE split(src.title, ' ')[1]
+			WHEN SPLIT(src.title, ' ')[1] = 'Lada' THEN 'Lada (ВАЗ)'
+			WHEN SPLIT(src.title, ' ')[1] = 'Alfa' THEN 'Alfa Romeo'
+			WHEN SPLIT(src.title, ' ')[1] = 'Dongfeng' THEN 'Dongfeng Honda'
+			WHEN SPLIT(src.title, ' ')[1] = 'Great' THEN 'Great Wall'
+			WHEN SPLIT(src.title, ' ')[1] = 'Iran' THEN 'Iran Khodro'
+			WHEN SPLIT(src.title, ' ')[1] = 'Land' THEN 'Land Rover'
+			ELSE SPLIT(src.title, ' ')[1]
 		END,
 		CASE
-			WHEN split(src.title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
-			WHEN split(src.title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
-			WHEN split(src.title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
-			WHEN split(src.title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
-			WHEN split(src.title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
-			WHEN split(src.title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Lada' THEN REGEXP_EXTRACT(src.title, r'Продажа Lada \(ВАЗ\) (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Alfa' THEN REGEXP_EXTRACT(src.title, r'Продажа Alfa Romeo (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Dongfeng' THEN REGEXP_EXTRACT(src.title, r'Продажа Dongfeng Honda (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Great' THEN REGEXP_EXTRACT(src.title, r'Продажа Great Wall (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Iran' THEN REGEXP_EXTRACT(src.title, r'Продажа Iran Khodro (.+)[,]')
+			WHEN SPLIT(src.title, ' ')[1] = 'Land' THEN REGEXP_EXTRACT(src.title, r'Продажа Land Rover (.+)[,]')
 			ELSE REGEXP_EXTRACT(src.title, r'Продажа [a-zA-Zа-яёА-ЯЁ-]+ (.+)[,]')
 		END,
 		SAFE_CAST(REGEXP_EXTRACT(src.description, r'^(\d{4}) г.,') AS INT),
@@ -348,10 +399,10 @@ BEGIN
 		REGEXP_EXTRACT(src.description, r',\s(\S+),.+'),
 		SAFE_CAST(REPLACE(REGEXP_EXTRACT(src.description, r',\s(\d+[ ]?\d*) км'), " ", "") AS INT),
 		REGEXP_EXTRACT(src.description, r'\| ([А-Яа-я0-9. ]+)'),
-		SAFE_CAST(REGEXP_EXTRACT(REPLACE(split(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
+		SAFE_CAST(REGEXP_EXTRACT(REPLACE(SPLIT(src.description, ',')[2], '.', ''), r'[0-9]+') AS INT) * 100,
 		CASE
 			WHEN INSTR(src.description, 'Запас хода') <> 0 THEN 'Electric'
-			ELSE split(src.description, ',')[3]	
+			ELSE SPLIT(src.description, ',')[3]	
 		END,
 		CASE
 			WHEN INSTR(src.exchange, 'Возможен обмен') <> 0 THEN 'Y'
@@ -377,12 +428,12 @@ BEGIN
 			ELSE 'N'
 		END,
 		CASE 
-			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[0])
+			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(SPLIT(src.location, ',')[0])
 			WHEN src.location IS NULL THEN ''
 			ELSE src.location
 		END,
 		CASE 
-			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(split(src.location, ',')[1])
+			WHEN INSTR(src.location, ',') <> 0 THEN TRIM(SPLIT(src.location, ',')[1])
 			ELSE ''
 		END,
 		CASE 
@@ -391,13 +442,88 @@ BEGIN
 		END,
 		src.scrap_date,
 		CURRENT_TIMESTAMP(),
-		"N"
+		"N",
+		src.oper
 	FROM row_for_insert AS src;
 	
+	SET processed_row_count = @@row_count;
+
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform data", "end");
+
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, ("Tokenized rows =" || SAFE_CAST(processed_row_count AS STRING)), "info");
+
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Load data", "start");
+
+	-- isert data in stg_1 with test on bad data
+	INSERT INTO `paid-project-346208`.`car_ads_ds_staging_test`.`cars_av_by_card_tokenized`(
+		row_id,
+		row_hash,
+		card_id,
+		brand,
+		model,
+		year,
+		price,
+		transmission,
+		mileage,
+		body,
+		engine_vol,
+		fuel,
+		exchange,
+		top,
+		vin,
+		crahed,
+		for_spare,
+		city,
+		region,
+		comment,
+		scrap_date,
+		modified_date,
+		deleted,
+		oper	
+	)
+	SELECT
+		row_id,
+		row_hash,
+		card_id,
+		brand,
+		model,
+		year,
+		price,
+		transmission,
+		mileage,
+		body,
+		engine_vol,
+		fuel,
+		exchange,
+		top,
+		vin,
+		crahed,
+		for_spare,
+		city,
+		region,
+		comment,
+		scrap_date,
+		modified_date,
+		deleted,
+		oper
+	FROM card_tokenized
+	WHERE 
+		brand IS NOT NULL AND
+		model IS NOT NULL AND
+		year IS NOT NULL AND
+		price IS NOT NULL AND
+		transmission IS NOT NULL AND
+		mileage IS NOT NULL AND
+		body IS NOT NULL AND
+		fuel IS NOT NULL AND
+		city IS NOT NULL;
+	 
 	--get quantity of rows which have been inserted
 	SET insert_row_count = @@row_count;
 
-	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Transform & Load data", "end");
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, "Load data", "end");
+
+	CALL `paid-project-346208`.`meta_ds`.`usp_write_event_log`(process_id, ("Loaded rows =" || SAFE_CAST(insert_row_count AS STRING)), "info");
 
 	SET metrics = (NULL, insert_row_count, NULL, NULL, NULL);
 	CALL `paid-project-346208`.`meta_ds`.`usp_write_process_log`("END",process_id,"usp_landing_staging1_av_by_card_tokenized_full_merge", metrics);
