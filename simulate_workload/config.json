@@ -1,0 +1,11 @@
+{
+    "audit_db": {
+        "host": "127.0.0.1",
+        "user": "",
+        "password": "",
+        "database": "car_ads_training_db",
+        "autocommit": 1
+    },
+    "init_db_script": "mysql_setup_query_logs.sql",
+    "simulator_init_db": "simulator_init_db.sql"
+  }
