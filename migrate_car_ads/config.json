@@ -1,0 +1,21 @@
+{
+    "car_ads_db": {
+        "host": "127.0.0.1",
+        "user": "",
+        "password": "",
+        "database": "car_ads_training_db",
+        "autocommit": 1
+    },
+    "car_ads_training": {
+        "host": "127.0.0.1",
+        "user": "",
+        "password": "",
+        "database": "car_ads_db",
+        "autocommit": 1
+    },
+    "folders": {
+        "base_folder": "car_ads_scrapper",
+        "scrapped_data": "scrapped_data"
+      }
+    
+  }
