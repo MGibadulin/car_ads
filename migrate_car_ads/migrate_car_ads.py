@@ -100,6 +100,7 @@ def main():
             year = re.search(r"&year_min=(\d+)&", url).group(1)
             price_usd = re.search(r"&list_price_min=(\d+)&", url).group(1)
             
+            # save card data in JSON
             try:
                 folder = make_folder(configs["folders"]["base_folder"],
                                                 [
@@ -131,7 +132,7 @@ def main():
             cur_ads_db.execute(sql_cmd)
             
             if cur_ads_db.rowcount > 0:
-                # ad_group with particular fields exist
+                # row with particular fields exist in table ad_groups
                 ad_group_id = cur_ads_db.fetchone()[0]
             else:
                 # ad_group with particular fields des not exist
@@ -172,14 +173,19 @@ def main():
                         change_status_date
                 )
                 values(
-                    
+                    {row[1]},
+                    {row[2]},
+                    {ad_group_id},
+                    {process_log_id},
+                    current_timestamp,
+                    {row[6]},
+                    {row[7]},
+                    {row[8]}
                 )
-                    """
-            # try save json on disk
-            # check is there (year, page_size, page_num, price_min) in car_ads_db.ad_groups
-            # if is not, then insert
-            # insert row in  car_ads_db
-            # save json       
+            """
+            cur_ads_db.execute(sql_cmd)
+
+        audit_end(conn_ads_db, {"process_log_id": process_log_id})              
         
         
 if __name__ == "__main__":
