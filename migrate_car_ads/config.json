@@ -14,7 +14,7 @@
         "autocommit": 1
     },
     "folders": {
-        "base_folder": "car_ads_scrapper",
+        "base_folder": "data",
         "scrapped_data": "scrapped_data"
       }
     
