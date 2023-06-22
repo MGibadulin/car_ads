@@ -1,13 +1,16 @@
+"""Migration data between schemas."""
 import json
 import re
 import time
-import pymysql
 import os
+import pymysql
+
 
 start_time = time.time()
 start_time_str = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime(start_time))
 
 def make_folder(start_folder, subfolders_chain):
+    """Make folder chain."""
     folder = start_folder
     for subfolder in subfolders_chain:
         folder += "/" + subfolder
@@ -18,6 +21,7 @@ def make_folder(start_folder, subfolders_chain):
 
 
 def execute_sql(con, sql_statements, fetch_mode="fetchone"):
+    """Execute list of sql statments."""
     cur = con.cursor()
     for sql in sql_statements:
         cur.execute(sql)
@@ -33,6 +37,7 @@ def execute_sql(con, sql_statements, fetch_mode="fetchone"):
 
 
 def audit_start(con, context):
+    """Log audit start."""
     process_desc = context["process_desc"]
     sql_statements = [
         f"""
@@ -48,6 +53,7 @@ def audit_start(con, context):
 
 
 def audit_end(con, context):
+    """Log audit end."""
     process_log_id = context["process_log_id"]
 
     sql_statements = [f"update process_log set end_date = current_timestamp where process_log_id = {process_log_id};"]
@@ -55,16 +61,17 @@ def audit_end(con, context):
     return execute_sql(con, sql_statements)
 
 def main():
-    with open("config.json") as config_file:
+    """Main function."""
+    with open("config.json", encoding="utf8") as config_file:
         configs = json.load(config_file)
-        
+
     conn_training_db = pymysql.connect(**configs["car_ads_training"])
     conn_ads_db= pymysql.connect(**configs["car_ads_db"])
-    
+
     with conn_training_db, conn_ads_db:
-        
+
         process_log_id = audit_start(conn_ads_db, {"process_desc": "migrate_car_ads.py"})[0]
-        
+
         cur_training_db = conn_training_db.cursor()
         sql_cmd = """
                 select 
@@ -85,21 +92,21 @@ def main():
                     inner join ad_groups on ads.ad_group_id = ad_groups.ad_group_id
                     where ad_status = 1 or ad_status = 2;
                 """
-                
+
         cur_training_db.execute(sql_cmd)
-        
+
         ads_table = cur_training_db.fetchall()
-        
+
         for row in ads_table:
             file_name = row[1] + row[2] #source_id + card_url
             file_name= file_name.split("?")
             file_name = file_name[0].replace("/", "-").replace(".", "-").replace(":", "-")
             card = row[9]
-            
+
             url = row[10]
             year = re.search(r"&year_min=(\d+)&", url).group(1)
             price_usd = re.search(r"&list_price_min=(\d+)&", url).group(1)
-            
+
             # save card data in JSON
             try:
                 folder = make_folder(configs["folders"]["base_folder"],
@@ -110,15 +117,15 @@ def main():
                                                     f"{year}",
                                                     f"price_{price_usd}-{price_usd + 9999}"
                                                 ])
-                with open(f"{folder}/{file_name}.json", "w", encoding="utf-8") as f:
-                    f.write(card)
-            except OSError as e:
-                print("Caught a OSError exception:", e)
+                with open(f"{folder}/{file_name}.json", "w", encoding="utf-8") as fp:
+                    fp.write(card)
+            except OSError as err:
+                print("Caught a OSError exception:", err)
                 continue
-            
+
             page_size = re.search(r"&page_size=(\d+)&", url).group(1)
             page_num = re.search(r"&page=(\d+)&", url).group(1)
-            
+
             cur_ads_db = conn_ads_db.cursor()
             sql_cmd = f"""
                     select
@@ -130,7 +137,7 @@ def main():
                         and page_num = {page_num};
                     """
             cur_ads_db.execute(sql_cmd)
-            
+
             if cur_ads_db.rowcount > 0:
                 # row with particular fields exist in table ad_groups
                 ad_group_id = cur_ads_db.fetchone()[0]
@@ -159,10 +166,10 @@ def main():
                 "select last_insert_id() as process_log_id;"
                 ]
                 ad_group_id = execute_sql(conn_ads_db, sql_statements)[0]
-                
-                
+
+
             sql_cmd = f"""
-                    insert car_ads_db (
+                    insert ads (
                         source_id,
                         card_url,
                         ad_group_id,
@@ -185,8 +192,8 @@ def main():
             """
             cur_ads_db.execute(sql_cmd)
 
-        audit_end(conn_ads_db, {"process_log_id": process_log_id})              
-        
-        
+        audit_end(conn_ads_db, {"process_log_id": process_log_id})
+
+
 if __name__ == "__main__":
     main()
