@@ -3,6 +3,7 @@ import json
 import re
 import time
 import os
+import sys
 import pymysql
 
 
@@ -62,6 +63,7 @@ def audit_end(con, context):
 
 def main():
     """Main function."""
+    start_ts = time.time()
     with open("config.json", encoding="utf8") as config_file:
         configs = json.load(config_file)
 
@@ -75,30 +77,32 @@ def main():
         cur_training_db = conn_training_db.cursor()
         sql_cmd = """
                 select 
-                    ads.ads_id,
-                    ads.source_id,
-                    ads.card_url,
-                    ads.ad_group_id,
-                    ads.insert_process_log_id,
-                    ads.insert_date,
-                    ads.change_status_process_log_id,
-                    ads.ad_status,
-                    ads.change_status_date,
-                    ads.card,
-                    ad_groups.group_url,
-                    ad_groups.process_log_id as process_log_id_g,
-                    ad_groups.insert_date as insert_date_g
+                    car_ads_training_db.ads.ads_id,
+                    car_ads_training_db.ads.source_id,
+                    car_ads_training_db.ads.card_url,
+                    car_ads_training_db.ads.ad_group_id,
+                    car_ads_training_db.ads.insert_process_log_id,
+                    car_ads_training_db.ads.insert_date,
+                    car_ads_training_db.ads.change_status_process_log_id,
+                    car_ads_training_db.ads.ad_status,
+                    car_ads_training_db.ads.change_status_date,
+                    car_ads_training_db.ads.card,
+                    car_ads_training_db.ad_groups.group_url,
+                    car_ads_training_db.ad_groups.process_log_id as process_log_id_g,
+                    car_ads_training_db.ad_groups.insert_date as insert_date_g
                     from  car_ads_training_db.ads
                     inner join car_ads_training_db.ad_groups on car_ads_training_db.ads.ad_group_id = car_ads_training_db.ad_groups.ad_group_id
-                    where car_ads_training_db.ads.ad_status = 1 or car_ads_training_db.ads.ad_status = 2;
+                    left join car_ads_db.ads on car_ads_training_db.ads.card_url = car_ads_db.ads.card_url
+                    where (car_ads_training_db.ads.ad_status = 1 or car_ads_training_db.ads.ad_status = 2) and car_ads_db.ads.card_url is null;
                 """
 
         cur_training_db.execute(sql_cmd)
 
         ads_table = cur_training_db.fetchall()
-        print("Data from car_ads_training_db gets")
-
-        for cnt, row in enumerate(ads_table):
+        print(f"Data from car_ads_training_db gets. Size of data is {sys.getsizeof(ads_table)} bytes")
+        cnt_g = 0
+        cnt_r = 0
+        for row in ads_table:
             file_name = row[1] + row[2] #source_id + card_url
             file_name= file_name.split("?")
             file_name = file_name[0].replace("/", "-").replace(".", "-").replace(":", "-")
@@ -120,7 +124,6 @@ def main():
                                                 ])
                 with open(f"{folder}/{file_name}.json", "w", encoding="utf-8") as fp:
                     fp.write(card)
-                    print(f"\rrow #{cnt}. {folder}/{file_name}.json saved.")
             except OSError as err:
                 print("Caught a OSError exception:", err)
                 continue
@@ -128,6 +131,7 @@ def main():
             page_size = re.search(r"&page_size=(\d+)&", url).group(1)
             page_num = re.search(r"&page=(\d+)&", url).group(1)
 
+            # check fields in ad_groups table  
             cur_ads_db = conn_ads_db.cursor()
             sql_cmd = f"""
                     select
@@ -168,7 +172,7 @@ def main():
                 "select last_insert_id() as process_log_id;"
                 ]
                 ad_group_id = execute_sql(conn_ads_db, sql_statements)[0]
-
+                cnt_g += 1
 
             sql_cmd = f"""
                     insert car_ads_db.ads (
@@ -193,9 +197,11 @@ def main():
                 )
             """
             cur_ads_db.execute(sql_cmd)
+            cnt_r += 1
 
         audit_end(conn_ads_db, {"process_log_id": process_log_id})
-
+        print("Done")
+        print(f"JSON saved and ads inserted {cnt_r}. Groups inserted {cnt_g}. Time elapsed {time.time()-start_time:2.1f} sec")
 
 if __name__ == "__main__":
     main()
