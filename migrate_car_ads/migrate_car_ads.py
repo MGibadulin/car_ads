@@ -41,7 +41,7 @@ def audit_start(con, context):
     process_desc = context["process_desc"]
     sql_statements = [
         f"""
-            insert into process_log(process_desc, user, host) 
+            insert into car_ads_db.process_log(process_desc, user, host) 
             select '{process_desc}', user, host 
             from information_schema.processlist 
             where ID = connection_id();
@@ -56,7 +56,7 @@ def audit_end(con, context):
     """Log audit end."""
     process_log_id = context["process_log_id"]
 
-    sql_statements = [f"update process_log set end_date = current_timestamp where process_log_id = {process_log_id};"]
+    sql_statements = [f"update car_ads_db.process_log set end_date = current_timestamp where process_log_id = {process_log_id};"]
 
     return execute_sql(con, sql_statements)
 
@@ -69,7 +69,7 @@ def main():
     conn_ads_db= pymysql.connect(**configs["car_ads_db"])
 
     with conn_training_db, conn_ads_db:
-
+        print("Connection established")
         process_log_id = audit_start(conn_ads_db, {"process_desc": "migrate_car_ads.py"})[0]
 
         cur_training_db = conn_training_db.cursor()
@@ -88,16 +88,17 @@ def main():
                     ad_groups.group_url,
                     ad_groups.process_log_id as process_log_id_g,
                     ad_groups.insert_date as insert_date_g
-                    from  ads
-                    inner join ad_groups on ads.ad_group_id = ad_groups.ad_group_id
-                    where ad_status = 1 or ad_status = 2;
+                    from  car_ads_training_db.ads
+                    inner join car_ads_training_db.ad_groups on car_ads_training_db.ads.ad_group_id = car_ads_training_db.ad_groups.ad_group_id
+                    where car_ads_training_db.ads.ad_status = 1 or car_ads_training_db.ads.ad_status = 2;
                 """
 
         cur_training_db.execute(sql_cmd)
 
         ads_table = cur_training_db.fetchall()
+        print("Data from car_ads_training_db gets")
 
-        for row in ads_table:
+        for cnt, row in enumerate(ads_table):
             file_name = row[1] + row[2] #source_id + card_url
             file_name= file_name.split("?")
             file_name = file_name[0].replace("/", "-").replace(".", "-").replace(":", "-")
@@ -105,7 +106,7 @@ def main():
 
             url = row[10]
             year = re.search(r"&year_min=(\d+)&", url).group(1)
-            price_usd = re.search(r"&list_price_min=(\d+)&", url).group(1)
+            price_usd = int(re.search(r"&list_price_min=(\d+)&", url).group(1))
 
             # save card data in JSON
             try:
@@ -119,6 +120,7 @@ def main():
                                                 ])
                 with open(f"{folder}/{file_name}.json", "w", encoding="utf-8") as fp:
                     fp.write(card)
+                    print(f"\rrow #{cnt}. {folder}/{file_name}.json saved.")
             except OSError as err:
                 print("Caught a OSError exception:", err)
                 continue
@@ -130,7 +132,7 @@ def main():
             sql_cmd = f"""
                     select
                         ad_group_id
-                    from ad_groups
+                    from car_ads_db.ad_groups
                     where price_min = {price_usd}
                         and page_size = {page_size}
                         and year = {year}
@@ -146,7 +148,7 @@ def main():
                 # create ad_group record with (price_min, page_size, year, page_num)
                 sql_statements  =  [
                     f"""
-                    insert ad_groups(
+                    insert car_ads_db.ad_groups(
                         price_min,
                         page_size,
                         year,
@@ -169,7 +171,7 @@ def main():
 
 
             sql_cmd = f"""
-                    insert ads (
+                    insert car_ads_db.ads (
                         source_id,
                         card_url,
                         ad_group_id,
@@ -180,14 +182,14 @@ def main():
                         change_status_date
                 )
                 values(
-                    {row[1]},
-                    {row[2]},
+                    "{row[1]}",
+                    "{row[2]}",
                     {ad_group_id},
                     {process_log_id},
                     current_timestamp,
                     {row[6]},
                     {row[7]},
-                    {row[8]}
+                    "{row[8]}"
                 )
             """
             cur_ads_db.execute(sql_cmd)
