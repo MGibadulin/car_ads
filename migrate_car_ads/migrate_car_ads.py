@@ -63,7 +63,6 @@ def audit_end(con, context):
 
 def main():
     """Main function."""
-    start_ts = time.time()
     with open("config.json", encoding="utf8") as config_file:
         configs = json.load(config_file)
 
