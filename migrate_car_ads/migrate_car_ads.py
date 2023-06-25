@@ -66,14 +66,13 @@ def main():
     with open("config.json", encoding="utf8") as config_file:
         configs = json.load(config_file)
 
-    conn_training_db = pymysql.connect(**configs["car_ads_training"])
-    conn_ads_db= pymysql.connect(**configs["car_ads_db"])
+    connection = pymysql.connect(**configs["car_ads_training"])
 
-    with conn_training_db, conn_ads_db:
+    with connection:
         print("Connection established")
-        process_log_id = audit_start(conn_ads_db, {"process_desc": "migrate_car_ads.py"})[0]
+        process_log_id = audit_start(connection, {"process_desc": "migrate_car_ads.py"})[0]
 
-        cur_training_db = conn_training_db.cursor()
+        cursor = connection.cursor()
         sql_cmd = """
                 select 
                     car_ads_training_db.ads.ads_id,
@@ -95,9 +94,9 @@ def main():
                     where (car_ads_training_db.ads.ad_status = 1 or car_ads_training_db.ads.ad_status = 2) and car_ads_db.ads.card_url is null;
                 """
 
-        cur_training_db.execute(sql_cmd)
+        cursor.execute(sql_cmd)
 
-        ads_table = cur_training_db.fetchall()
+        ads_table = cursor.fetchall()
         print(f"Data from car_ads_training_db gets. Size of data is {sys.getsizeof(ads_table)} bytes")
         cnt_g = 0
         cnt_r = 0
@@ -131,7 +130,6 @@ def main():
             page_num = re.search(r"&page=(\d+)&", url).group(1)
 
             # check fields in ad_groups table  
-            cur_ads_db = conn_ads_db.cursor()
             sql_cmd = f"""
                     select
                         ad_group_id
@@ -141,11 +139,11 @@ def main():
                         and year = {year}
                         and page_num = {page_num};
                     """
-            cur_ads_db.execute(sql_cmd)
+            cursor.execute(sql_cmd)
 
-            if cur_ads_db.rowcount > 0:
+            if cursor.rowcount > 0:
                 # row with particular fields exist in table ad_groups
-                ad_group_id = cur_ads_db.fetchone()[0]
+                ad_group_id = cursor.fetchone()[0]
             else:
                 # ad_group with particular fields des not exist
                 # create ad_group record with (price_min, page_size, year, page_num)
@@ -170,7 +168,7 @@ def main():
                 """,
                 "select last_insert_id() as process_log_id;"
                 ]
-                ad_group_id = execute_sql(conn_ads_db, sql_statements)[0]
+                ad_group_id = execute_sql(connection, sql_statements)[0]
                 cnt_g += 1
 
             sql_cmd = f"""
@@ -195,10 +193,10 @@ def main():
                     "{row[8]}"
                 )
             """
-            cur_ads_db.execute(sql_cmd)
+            cursor.execute(sql_cmd)
             cnt_r += 1
 
-        audit_end(conn_ads_db, {"process_log_id": process_log_id})
+        audit_end(connection, {"process_log_id": process_log_id})
         print("Done")
         print(f"JSON saved and ads inserted {cnt_r}. Groups inserted {cnt_g}. Time elapsed {time.time()-start_time:2.1f} sec")
 
