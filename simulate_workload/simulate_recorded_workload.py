@@ -58,7 +58,7 @@ def init_db_simulate(con, sql_script_path):
 
     if sql_script_path is not None:
         cur = con.cursor()
-        with open(sql_script_path) as init_db_file:
+        with open(sql_script_path, encoding='utf8') as init_db_file:
             for sql_stmt in init_db_file.read().split(";"):
                 try:
                     cur.execute(sql_stmt)
@@ -92,7 +92,7 @@ def show_log_message(level_show_console, sql_cmd, len_workload, cnt):
         print(msg, end="")
 
 
-def exec_commands_local(thread_id, level_show_console, cursor) -> int:  
+def exec_commands_local(thread_id, level_show_console, cursor) -> int:
     """Get list all commands recorded workload from database, save locally and execute"""
 
     idx = 1
@@ -141,8 +141,8 @@ def execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx):
     try:
         cursor.execute(sql_cmd)
         show_log_message(level_show_console, sql_cmd, len_workload, idx)
-    except pymysql.err.DataError as e:
-        print("Caught a pymysql.err.DataError exception:", e)
+    except pymysql.err.DataError as err:
+        print("Caught a pymysql.err.DataError exception:", err)
 
 
 def create_fill_commands_table(thread_id, cursor):
@@ -177,7 +177,8 @@ def create_fill_commands_table(thread_id, cursor):
                     AND CONVERT(`sql_text` USING utf8) <> ''
                     AND CONVERT(`sql_text` USING utf8) NOT LIKE "--%"
                     AND CONVERT(`sql_text` USING utf8) NOT LIKE "set%"
-                    ORDER BY `start_time` ASC;"""
+                    ORDER BY `start_time` ASC
+                    LIMIT 20000;"""
     cursor.execute(sql_cmd)
 
 
@@ -192,7 +193,7 @@ def main():
     storage_cmd = args_app["storage_cmd"]
 
     # Load app config
-    with open("config.json") as config_file:
+    with open("config.json", encoding='utf8') as config_file:
         configs = json.load(config_file)
 
     # Connect to database
@@ -209,13 +210,15 @@ def main():
         # Cretae and fill table with commands for following execute
         print("Create and fill table with commands for following execute")
         create_fill_commands_table(thread_id, cursor)
-        
+
         start_ts = datetime.now()
+        print(f"Start simulate at {start_ts}")
+
         # Execute commands from recorded workload from local stoarge or from DB
         if storage_cmd == STORAGE_CMD_LOCAL:
-            totl_cmd = exec_commands_local(level_show_console, cursor)
+            totl_cmd = exec_commands_local(thread_id, level_show_console, cursor)
         elif storage_cmd == STORAGE_CMD_DB:
-            totl_cmd = exec_commands_from_db(level_show_console, cursor)
+            totl_cmd = exec_commands_from_db(thread_id, level_show_console, cursor)
         else:
             print("Workload did not simulate")
             totl_cmd = 0
