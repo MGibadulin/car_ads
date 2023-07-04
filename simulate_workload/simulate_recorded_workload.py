@@ -80,7 +80,7 @@ def show_log_message(level_show_console, sql_cmd, len_workload, cnt):
         percent_complete = f"{(cnt / len_workload):2.1%}"
 
     if level_show_console == LEVEL_MSG_SHOW_CONSOLE_3:
-        msg = f"{datetime.now()} | Total commands executed: {cnt} from {len_workload}. Completed {percent_complete}"
+        msg = f"\n{datetime.now()} | Total commands executed: {cnt} from {len_workload}. Completed {percent_complete}"
         msg += sql_cmd[:100] + ("..." if len(sql_cmd) > 100 else "")
     elif level_show_console == LEVEL_MSG_SHOW_CONSOLE_2:
         msg = f"\r{datetime.now()} | Total commands executed: {cnt} from {len_workload}. Completed {percent_complete}"
@@ -89,16 +89,16 @@ def show_log_message(level_show_console, sql_cmd, len_workload, cnt):
         LEVEL_MSG_SHOW_CONSOLE_2,
         LEVEL_MSG_SHOW_CONSOLE_3,
     ):
-        print(msg)
+        print(msg, end="")
 
 
-def exec_commands_local(level_show_console, cursor) -> int:  
+def exec_commands_local(thread_id, level_show_console, cursor) -> int:  
     """Get list all commands recorded workload from database, save locally and execute"""
 
     idx = 1
     sql_cmd = f"""
                 SELECT `sql_cmd`
-                FROM `cmd_for_exec`;"""
+                FROM `cmd_for_exec_{thread_id}`;"""
     cursor.execute(sql_cmd)
 
     stmts_sql_for_exec = cursor.fetchall()
@@ -111,7 +111,7 @@ def exec_commands_local(level_show_console, cursor) -> int:
     return idx
 
 
-def exec_commands_from_db(level_show_console, cursor) -> int:
+def exec_commands_from_db(thread_id, level_show_console, cursor) -> int:
     """Get command recorded workload from database by one and execute"""
 
     idx = 1
@@ -120,7 +120,7 @@ def exec_commands_from_db(level_show_console, cursor) -> int:
     while is_cmd_to_execute:
         sql_cmd = f"""
                     SELECT `sql_cmd`
-                    FROM `cmd_for_exec`
+                    FROM `cmd_for_exec_{thread_id}`
                     WHERE `cmd_id` = {idx};"""
         cursor.execute(sql_cmd)
 
@@ -148,11 +148,11 @@ def execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx):
 def create_fill_commands_table(thread_id, cursor):
     """Create temporary `cmd_for_exec` table with command for a particular thread"""
 
-    sql_cmd = """DROP TABLE IF EXISTS `cmd_for_exec`;"""
+    sql_cmd = f"""DROP TABLE IF EXISTS `cmd_for_exec_{thread_id}`;"""
     cursor.execute(sql_cmd)
 
-    sql_cmd = """
-                CREATE TEMPORARY TABLE IF NOT EXISTS `cmd_for_exec` (
+    sql_cmd = f"""
+                CREATE TEMPORARY TABLE IF NOT EXISTS `cmd_for_exec_{thread_id}` (
                     `cmd_id` int NOT NULL AUTO_INCREMENT,
                     `start_time` timestamp(6) NOT NULL,
                     `sql_cmd`  mediumtext NOT NULL,
@@ -162,7 +162,7 @@ def create_fill_commands_table(thread_id, cursor):
     cursor.execute(sql_cmd)
 
     sql_cmd = f"""
-                INSERT INTO `cmd_for_exec` (
+                INSERT INTO `cmd_for_exec_{thread_id}` (
                     `start_time`,
                     `sql_cmd`,
                     `thread_id`
@@ -176,6 +176,7 @@ def create_fill_commands_table(thread_id, cursor):
                     AND `thread_id` = {thread_id}
                     AND CONVERT(`sql_text` USING utf8) <> ''
                     AND CONVERT(`sql_text` USING utf8) NOT LIKE "--%"
+                    AND CONVERT(`sql_text` USING utf8) NOT LIKE "set%"
                     ORDER BY `start_time` ASC;"""
     cursor.execute(sql_cmd)
 
@@ -206,7 +207,7 @@ def main():
         cursor = connection.cursor()
 
         # Cretae and fill table with commands for following execute
-        print("Cretae and fill table with commands for following execute")
+        print("Create and fill table with commands for following execute")
         create_fill_commands_table(thread_id, cursor)
         
         start_ts = datetime.now()
@@ -218,7 +219,7 @@ def main():
         else:
             print("Workload did not simulate")
             totl_cmd = 0
-        print(f"Elapsed time: {datetime.now() - start_ts}. Total executed commands: {totl_cmd}")
+        print(f"\nElapsed time: {datetime.now() - start_ts}. Total executed commands: {totl_cmd}")
 
     print("Done")
 
