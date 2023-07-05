@@ -1,9 +1,10 @@
+"""The script simulate workload on MySQL by reading slow_log."""
 import argparse
-from datetime import datetime
 import json
-import pymysql
 import math
 import time
+import pymysql
+
 
 
 DEFAULT_THREAD_ID = 16
