@@ -2,6 +2,8 @@ import argparse
 from datetime import datetime
 import json
 import pymysql
+import math
+import time
 
 
 DEFAULT_THREAD_ID = 16
@@ -13,7 +15,7 @@ EXEC_INIT_SCRIPT = 1
 NOT_EXEC_INIT_SCRIPT = 0
 
 LEVEL_MSG_SHOW_CONSOLE_0 = 0  # Do not show message in console
-LEVEL_MSG_SHOW_CONSOLE_1 = 1  # reserved
+LEVEL_MSG_SHOW_CONSOLE_1 = 1  # Show start time and percent
 LEVEL_MSG_SHOW_CONSOLE_2 = 2  # Show message with time and counter
 LEVEL_MSG_SHOW_CONSOLE_3 = 3  # Show message with time, counter and SQL command
 
@@ -43,7 +45,7 @@ def get_args() -> dict:
     parser.add_argument(
         "-level_show_console",
         type=int,
-        default=LEVEL_MSG_SHOW_CONSOLE_2,
+        default=LEVEL_MSG_SHOW_CONSOLE_1,
         help="Level of message for show in console",
     )
 
@@ -70,32 +72,28 @@ def init_db_simulate(con, sql_script_path):
 
 def show_log_message(level_show_console, sql_cmd, len_workload, cnt):
     """Print log message in console"""
+    if level_show_console == LEVEL_MSG_SHOW_CONSOLE_0:
+        return
 
-    msg = "\r"
+    if level_show_console == LEVEL_MSG_SHOW_CONSOLE_1:
+        if math.floor((cnt-1)*100/len_workload) == math.floor(cnt*100/len_workload):
+            return
+        else:
+            msg = f"{time.strftime('%X', time.gmtime())}, Progress: {round(cnt/len_workload*100)}%."
 
-    if len_workload is None:
-        len_workload = "??"
-        percent_complete = "??%"
-    else:
-        percent_complete = f"{(cnt / len_workload):2.1%}"
+    if level_show_console in {LEVEL_MSG_SHOW_CONSOLE_2, LEVEL_MSG_SHOW_CONSOLE_3}:
+        msg = f"{time.strftime('%X', time.gmtime())}, No of commands executed: {cnt} / {len_workload}."
 
     if level_show_console == LEVEL_MSG_SHOW_CONSOLE_3:
-        msg = f"\n{datetime.now()} | Total commands executed: {cnt} from {len_workload}. Completed {percent_complete}"
         msg += sql_cmd[:100] + ("..." if len(sql_cmd) > 100 else "")
-    elif level_show_console == LEVEL_MSG_SHOW_CONSOLE_2:
-        msg = f"\r{datetime.now()} | Total commands executed: {cnt} from {len_workload}. Completed {percent_complete}"
 
-    if level_show_console in (
-        LEVEL_MSG_SHOW_CONSOLE_2,
-        LEVEL_MSG_SHOW_CONSOLE_3,
-    ):
-        print(msg, end="")
+    print(msg)
 
 
-def exec_commands_local(thread_id, level_show_console, cursor) -> int:
+def exec_commands_local(thread_id, level_show_console, cursor):
     """Get list all commands recorded workload from database, save locally and execute"""
 
-    idx = 1
+
     sql_cmd = f"""
                 SELECT `sql_cmd`
                 FROM `cmd_for_exec_{thread_id}`;"""
@@ -105,34 +103,30 @@ def exec_commands_local(thread_id, level_show_console, cursor) -> int:
 
     len_workload = len(stmts_sql_for_exec)
 
-    for idx, stmt_sql in enumerate(stmts_sql_for_exec, start=1):
+    for cnt, stmt_sql in enumerate(stmts_sql_for_exec, start=1):
         sql_cmd = stmt_sql[0]
-        execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx)
-    return idx
+        execute_cmd(level_show_console, cursor, sql_cmd, len_workload, cnt)
 
 
-def exec_commands_from_db(thread_id, level_show_console, cursor) -> int:
+
+def exec_commands_from_db(thread_id, level_show_console, cursor):
     """Get command recorded workload from database by one and execute"""
 
-    idx = 1
-    is_cmd_to_execute = True
-    len_workload = None
-    while is_cmd_to_execute:
+    sql_cmd = f"""SELECT COUNT(cmd_id) FROM `cmd_for_exec_{thread_id}`"""
+    cursor.execute(sql_cmd)
+    len_workload = cursor.fetchone()[0]
+
+    for idx in range(1, len_workload + 1):
         sql_cmd = f"""
                     SELECT `sql_cmd`
                     FROM `cmd_for_exec_{thread_id}`
                     WHERE `cmd_id` = {idx};"""
         cursor.execute(sql_cmd)
 
-        if cursor.rowcount > 0:
-            row = cursor.fetchone()
-            sql_cmd = row[0]
-            execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx)
-        else:
-            is_cmd_to_execute = False
+        row = cursor.fetchone()
+        sql_cmd = row[0]
 
-        idx += 1
-    return idx - 1
+        execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx)
 
 
 def execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx):
@@ -145,7 +139,7 @@ def execute_cmd(level_show_console, cursor, sql_cmd, len_workload, idx):
         print("Caught a pymysql.err.DataError exception:", err)
 
 
-def create_fill_commands_table(thread_id, cursor):
+def create_and_fill_commands_table(db, slow_log_table, thread_id, cursor):
     """Create temporary `cmd_for_exec` table with command for a particular thread"""
 
     sql_cmd = f"""DROP TABLE IF EXISTS `cmd_for_exec_{thread_id}`;"""
@@ -171,14 +165,12 @@ def create_fill_commands_table(thread_id, cursor):
                     `start_time`,
                     CONVERT(`sql_text` USING utf8),
                     `thread_id`
-                FROM car_ads_training_db.workload
+                FROM {db}.{slow_log_table} 
                 WHERE db = 'car_ads_training_db'
                     AND `thread_id` = {thread_id}
                     AND CONVERT(`sql_text` USING utf8) <> ''
                     AND CONVERT(`sql_text` USING utf8) NOT LIKE "--%"
-                    AND CONVERT(`sql_text` USING utf8) NOT LIKE "set%"
-                    ORDER BY `start_time` ASC
-                    LIMIT 20000;"""
+                    ORDER BY `start_time` ASC;"""
     cursor.execute(sql_cmd)
 
 
@@ -197,34 +189,37 @@ def main():
         configs = json.load(config_file)
 
     # Connect to database
-    print("Connect to database")
-    connection = pymysql.connect(**configs["audit_db"])
+    connection = pymysql.connect(**configs["simulator_db"])
+    print(f"{time.strftime('%X', time.gmtime())}, Connected to database")
 
     # Execute initialaze script database
+    print(f"{time.strftime('%X', time.gmtime())}, Initializing...")
     if exec_init_script:
         init_db_simulate(connection, configs.get("simulator_init_db"))
+    print(f"{time.strftime('%X', time.gmtime())}, Initialized    ")
 
     with connection:
         cursor = connection.cursor()
 
         # Cretae and fill table with commands for following execute
-        print("Create and fill table with commands for following execute")
-        create_fill_commands_table(thread_id, cursor)
+        print(f"{time.strftime('%X', time.gmtime())}, Creating and filling `cmd_for_exec_{thread_id}` temporary table...")
+        create_and_fill_commands_table("car_ads_training_db", "workload", thread_id, cursor)
+        print(f"{time.strftime('%X', time.gmtime())}, Done")
 
-        start_ts = datetime.now()
-        print(f"Start simulate at {start_ts}")
+        start_time = time.time()
+        print("-------------------------")
+        print(f"{time.strftime('%X', time.gmtime())}, Simulating the workload (thread_id = {thread_id})")
+
 
         # Execute commands from recorded workload from local stoarge or from DB
         if storage_cmd == STORAGE_CMD_LOCAL:
-            totl_cmd = exec_commands_local(thread_id, level_show_console, cursor)
+            exec_commands_local(thread_id, level_show_console, cursor)
         elif storage_cmd == STORAGE_CMD_DB:
-            totl_cmd = exec_commands_from_db(thread_id, level_show_console, cursor)
+            exec_commands_from_db(thread_id, level_show_console, cursor)
         else:
-            print("Workload did not simulate")
-            totl_cmd = 0
-        print(f"\nElapsed time: {datetime.now() - start_ts}. Total executed commands: {totl_cmd}")
+            print(f"{time.strftime('%X', time.gmtime())}, Workload did not simulate")
 
-    print("Done")
+    print(f"{time.strftime('%X', time.gmtime())}, Done!\nTime spent by simulator (pure workload): {time.strftime('%X', time.gmtime(time.time() - start_time))}")
 
 
 if __name__ == "__main__":
