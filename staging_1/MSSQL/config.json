@@ -1,9 +1,12 @@
 {
     "mssql_db": {
-        "host": "localhost:1433",
+        "host": "",
         "user": "",
         "password": "",
         "database": "car_ads_training_db"
     },
-    "mssql_init_db_script": "mssql_setup.sql"
+    "mssql_init_db_script": "mssql_setup.sql",
+    "batch_saze": 10000,
+    "source_id": "https://www.cars.com",
+    "process_desc": "tokenize_card.py"
 }
