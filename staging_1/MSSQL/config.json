@@ -1,0 +1,9 @@
+{
+    "mssql_db": {
+        "host": "localhost:1433",
+        "user": "",
+        "password": "",
+        "database": "car_ads_training_db"
+    },
+    "mssql_init_db_script": "mssql_setup.sql"
+}
