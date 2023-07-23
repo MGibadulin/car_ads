@@ -14,7 +14,7 @@ def get_config():
         print("Script terminated")
     return configs
 
-   
+
 def get_not_tokenized_cards(connection, batch_size: int):
     """Get cards not yet tokenized."""
     stmt = f"""select top {batch_size} a.ads_id
@@ -35,14 +35,14 @@ def get_not_tokenized_cards(connection, batch_size: int):
 
 def tokenize_card():
     return ""
-    
+
 def uncompress_card(compressed_card):
     uncompressed_card = zlib.decompress(compressed_card, zlib.MAX_WBITS+16).decode(encoding='utf-8')
     return uncompressed_card
-    
+
 def upload_tokenized_cards_to_db():
-    pass    
-    
+    pass
+
 def main():
 
     configs = get_config()
@@ -53,7 +53,7 @@ def main():
         num_butch = 1
         cards = get_not_tokenized_cards(connection, configs["batch_size"])
         print(f"{time.strftime('%X', time.gmtime())}, Get cards for tokenize. Batch {num_butch}.")
-        
+
         while cards:
             tokenized_cards = []
             print(f"{time.strftime('%X', time.gmtime())}, Tokenized cards. Batch {num_butch}.")
@@ -61,16 +61,16 @@ def main():
                 uncompressed_card = uncompress_card(card[1])
                 tokenized_card = tokenize_card(uncompressed_card)
                 tokenized_cards.append(tokenized_card)
-            
+
             upload_tokenized_cards_to_db(tokenized_cards)
             print(f"{time.strftime('%X', time.gmtime())}, Upload tokenized cards to database. Batch {num_butch}.")
-            
+
             cards = get_not_tokenized_cards(connection, configs["batch_size"])
             num_butch += 1
             print(f"{time.strftime('%X', time.gmtime())}, Get cards for tokenize. Butch {num_butch}.")
-            
-            
-        
+
+
+
         # cursor = connection.cursor()
         # stmt = 'SELECT top 10 ads_id, card_compressed from dbo.ads;'
         # cursor.execute(stmt)  
@@ -82,6 +82,6 @@ def main():
         #         print(f"{str(row[0])} {plain_string[:300]}")     
         #     row = cursor.fetchone()
 
-    
+
 if __name__ == "__main__":
     main()
