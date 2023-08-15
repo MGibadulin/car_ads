@@ -1,10 +1,15 @@
 {
-    "mssql_db": {
+    "source_db": {
         "host": "",
         "user": "",
         "password": "",
         "database": ""
     },
-    "batch_size": 10000,
-    "process_desc": "full_load.py"
+    "target_db": {
+        "host": "",
+        "user": "",
+        "password": "",
+        "database": ""
+    },
+    "batch_size": 10
 }
