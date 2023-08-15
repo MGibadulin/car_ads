@@ -1,7 +1,6 @@
 import pymssql
 import json
 import time
-import zlib
 
 
 def get_config():
@@ -17,13 +16,14 @@ def get_config():
 
 def download_cards_from_source(connection, batch_size: int):
     """Get cards from source."""
-    stmt = f"""select top {batch_size} a.ads_id
-                from dbo.ads as a
-                left join dbo.tokenized_card as t
-                on a.ads_id = t.ads_id
-                where t.ads_id is null
-                and a.ad_status = 2
-                and source_id = 'https://www.cars.com'"""
+    stmt = f"""select a.ads_id,
+                a.source_a,
+                a.card_url,
+                a.ad_status,
+                a.card_compressed,
+                a.source_num
+                from car_ads_training_db.dbo.ads_archive as a
+                where a.ad_status = 2"""
     cursor = connection.cursor()
     rows = []
     try:
