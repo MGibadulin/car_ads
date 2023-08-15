@@ -1,0 +1,10 @@
+{
+    "mssql_db": {
+        "host": "",
+        "user": "",
+        "password": "",
+        "database": ""
+    },
+    "batch_size": 10000,
+    "process_desc": "full_load.py"
+}
