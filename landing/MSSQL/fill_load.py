@@ -60,28 +60,30 @@ def upload_cards_to_destanation(connection, process_log_id, cards):
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
     
-def write_process_log(cursor, action):
+def write_process_log_start(cursor):
     """Write process log."""
     
     process_log_id = None
-    if action == "START":
-        cursor.execute(f"""
-                    insert into [Landing].[dbo].[process_log] (process_desc, [user], host, connection_id)         
-                    select '{PROCESS_DESC}', 
-                            SYSTEM_USER, 
-                            HOST_NAME(),
-                            @@spid;
-                """)
-        cursor.execute("select scope_identity() as process_log_id;")
-        process_log_id = cursor.fetchone()[0]
-    elif action == "END":
-        cursor.execute(
-            f"""
-                update process_log 
-                    set end_date = getdate() 
-                where process_log_id = {process_log_id};
-            """
-        )
+    cursor.execute(f"""
+                insert into [Landing].[dbo].[process_log] (process_desc, [user], host, connection_id)         
+                select '{PROCESS_DESC}', 
+                        SYSTEM_USER, 
+                        HOST_NAME(),
+                        @@spid;
+            """)
+    cursor.execute("select scope_identity() as process_log_id;")
+    process_log_id = cursor.fetchone()[0]
+    return process_log_id
+
+
+def write_process_log_end(cursor, process_log_id):
+    cursor.execute(
+        f"""
+            update process_log 
+                set end_date = getdate() 
+            where process_log_id = {process_log_id};
+        """
+    )
     return process_log_id
 
 def get_process_start_time(cursor, process_log_id):
@@ -118,7 +120,7 @@ def main():
         source_cur = source_db_conx.cursor()
         target_cur = target_db_conx.cursor()
 
-        process_log_id = write_process_log(target_cur, "START")
+        process_log_id = write_process_log_start(target_cur)
         
         # ! time from source may be difference from target
         process_start_time = get_process_start_time(target_cur, process_log_id)
@@ -139,7 +141,7 @@ def main():
             upload_cards_to_destanation(target_db_conx, process_log_id, cards)
             print(f"{time.strftime('%X', time.gmtime())}. Upload cards to destanation. Batch #{batch_num}.")
 
-        write_process_log(target_cur, "END")
+        write_process_log_end(target_cur, process_log_id)
 
 if __name__ == "__main__":
     main()
