@@ -2,6 +2,7 @@
 
 import json
 import math
+import sys
 import time
 import pymssql
 
@@ -16,7 +17,7 @@ def get_config():
     except OSError as err:
         print("File config.json not found", err)
         print("Script terminated")
-        exit()
+        sys.exit()
     return configs
 
 def download_cards_from_source(connection, batch_size: int, ads_id: int, process_start_time):
@@ -28,7 +29,7 @@ def download_cards_from_source(connection, batch_size: int, ads_id: int, process
             card_url,
             card_compressed,
             source_num
-        from car_ads_training_db.dbo.ads_archive
+        from [Landing].[dbo].[ads_archive]
         where ad_status = 2
             and ads_id between {ads_id} and {ads_id+batch_size-1}
             and modify_date < '{process_start_time}';"""
@@ -116,13 +117,22 @@ def get_max_ads_id(cursor, process_start_time):
     """Get max ads_id."""
     
     stmt =  f"""select
-                    max(ads_id) from [car_ads_training_db].[dbo].[ads_archive] 
+                    max(ads_id) from [Landing].[dbo].[ads_archive] 
                     where ad_status=2
                     and modify_date < '{process_start_time}';"""
-    cursor.execute(stmt)
-    max_ads_id = cursor.fetchone()[0]
-    return max_ads_id
-
+    try:
+        cursor.execute(stmt)
+        max_ads_id = cursor.fetchone()
+    except  pymssql.Error as err:
+        print("Caught a pymssql.Error exception:", err)
+        sys.exit()
+        
+    if max_ads_id[0]:
+        return max_ads_id[0]
+    else:
+        print("Maximum ads_id not recived. No data to full load")
+        sys.exit()
+        
 def main():
     """Main fuction."""
 
@@ -162,13 +172,17 @@ def main():
                                                ads_id,
                                                process_start_time)
            
-            print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-            stmt = prepare_data_to_upload(process_log_id, cards)
-            
-            print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-            upload_cards_to_destanation(dest_db_conx, stmt)
+            if  cards:
+                print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
+                stmt = prepare_data_to_upload(process_log_id, cards)
+                
+                print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
+                upload_cards_to_destanation(dest_db_conx, stmt)
+            else:
+                print(f"{time.strftime('%X', time.gmtime())}, Batch #{batch_num}/{number_batches} is empty, go on to the next one")
+                write_event_log(dest_cur, process_log_id, f"Batch #{batch_num}/{number_batches} is empty, go on to the next one", "INFO")
 
         write_process_log_end(dest_cur, process_log_id)
 

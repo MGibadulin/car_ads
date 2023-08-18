@@ -1,7 +1,10 @@
 """Incremental load from source DB to Target DB."""
 
+# todo Add metrics to process log
+
 import json
 import math
+import sys
 import time
 import pymssql
 
@@ -15,10 +18,10 @@ def get_config():
     except OSError as err:
         print("File config.json not found", err)
         print("Script terminated")
-        exit()
+        sys.exit()
     return configs
 
-def download_cards_from_source(connection, batch_size: int, ads_id: int, process_start_time):
+def download_cards_from_source(connection, batch_size: int, ads_id: int, process_start_time, previous_load_time):
     """Get cards from source DB."""
     stmt = f"""
         select
@@ -27,10 +30,11 @@ def download_cards_from_source(connection, batch_size: int, ads_id: int, process
             card_url,
             card_compressed,
             source_num
-        from car_ads_training_db.dbo.ads_archive
+        from [Landing].[dbo].[ads_archive]
         where ad_status = 2
             and ads_id between {ads_id} and {ads_id+batch_size-1}
-            and modify_date < '{process_start_time}';"""
+            and modify_date < '{process_start_time}'
+            and modify_date >= '{previous_load_time}';"""
     cursor = connection.cursor(as_dict=True)
     cards = []
     try:
@@ -113,26 +117,45 @@ def get_process_start_time(cursor, process_log_id):
 
 def get_previous_load_time(cursor, process_log_id):
     """Get previous load time."""
-    
-    cursor.execute(f"""
-                   select max(start_date) 
-                   from [Landing].[dbo].[process_log] 
-                   where process_log_id < {process_log_id}
-                   and (process_desc = 'full_load.py' or process_desc = 'incremental_load.py');""")
-    previous_load_time = str(cursor.fetchone()[0])[:-3]
-    return previous_load_time
+    try:
+        cursor.execute(f"""
+                    select max(start_date) 
+                    from [Landing].[dbo].[process_log] 
+                    where process_log_id < {process_log_id}
+                    and (process_desc = 'full_load.py' or process_desc = 'incremental_load.py')
+                    and end_date IS NOT NULL;""")
+        previous_load_time = cursor.fetchone()
+    except  pymssql.Error as err:
+        print("Caught a pymssql.Error exception:", err)
+        sys.exit()
 
-def get_max_ads_id(cursor, process_start_time):
+    if previous_load_time[0]:
+        previous_load_time = str(previous_load_time[0])[:-3]
+        return previous_load_time
+    else:
+        print("Information about previous downloads was not found.")
+        sys.exit()
+
+def get_max_ads_id(cursor, process_start_time, previous_load_time):
     """Get max ads_id."""
     
     stmt =  f"""select
-                    max(ads_id) from [car_ads_training_db].[dbo].[ads_archive] 
+                    max(ads_id) from [Landing].[dbo].[ads_archive] 
                     where ad_status=2
-                    and modify_date < '{process_start_time}';"""
-    cursor.execute(stmt)
-    max_ads_id = cursor.fetchone()[0]
-    return max_ads_id
-
+                    and modify_date < '{process_start_time}'
+                    and modify_date >= '{previous_load_time}';"""
+    try:
+        cursor.execute(stmt)
+        max_ads_id = cursor.fetchone()
+    except  pymssql.Error as err:
+        print("Caught a pymssql.Error exception:", err)
+        sys.exit()
+        
+    if max_ads_id[0]:
+        return max_ads_id[0]
+    else:
+        print("Maximum ads_id not recived. No data to incremental load")
+        sys.exit()
 
 def main():
     """Main fuction."""
@@ -149,23 +172,20 @@ def main():
         
         source_cur = source_db_conx.cursor()
         dest_cur = dest_db_conx.cursor()
-
         process_log_id = write_process_log_start(dest_cur)
-        
-        # get time preveious full/incremetal load
-        previous_load_time = get_previous_load_time()
-        
+        previous_load_time = get_previous_load_time(dest_cur, process_log_id)
         process_start_time = get_process_start_time(dest_cur, process_log_id)
-        write_event_log(dest_cur, process_log_id, f"Timestamp start of full upload:{process_start_time}", "START")
+        
+        write_event_log(dest_cur, process_log_id, f"Timestamp start of incremental upload:{process_start_time}", "START")
         
         print(f"{time.strftime('%X', time.gmtime())}, Getting information to calculate the number of batches")
         write_event_log(dest_cur, process_log_id, "Getting information to calculate the number of batches", "INFO")
-        max_ads_id = get_max_ads_id(source_cur, process_start_time)
+        max_ads_id = get_max_ads_id(source_cur, process_start_time, previous_load_time)
         
         batch_size = configs["batch_size"]
         number_batches = math.ceil(max_ads_id / batch_size)
-        print(f"{time.strftime('%X', time.gmtime())}, For a full load, it will be necessary to process {number_batches} batches")
-        write_event_log(dest_cur, process_log_id, f"For a full load, it will be necessary to process {number_batches} batches", "INFO")
+        print(f"{time.strftime('%X', time.gmtime())}, For a incremental load, it will be necessary to process {number_batches} batches")
+        write_event_log(dest_cur, process_log_id, f"For a incremental load, it will be necessary to process {number_batches} batches", "INFO")
 
         for batch_num, ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
 
@@ -174,15 +194,21 @@ def main():
             cards = download_cards_from_source(source_db_conx,
                                                batch_size,
                                                ads_id,
-                                               process_start_time)
+                                               process_start_time,
+                                               previous_load_time)
            
-            print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-            stmt = prepare_data_to_upload(process_log_id, cards)
-            
-            print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-            upload_cards_to_destanation(dest_db_conx, stmt)
+            if cards:
+                print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
+                stmt = prepare_data_to_upload(process_log_id, cards)
+                
+                print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
+                upload_cards_to_destanation(dest_db_conx, stmt)
+            else:
+                print(f"{time.strftime('%X', time.gmtime())}, Batch #{batch_num}/{number_batches} is empty, go on to the next one")
+                write_event_log(dest_cur, process_log_id, f"Batch #{batch_num}/{number_batches} is empty, go on to the next one", "INFO")
+
 
         write_process_log_end(dest_cur, process_log_id)
 
