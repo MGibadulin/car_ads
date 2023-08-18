@@ -57,7 +57,6 @@ def prepare_data_to_upload(process_log_id, cards):
                       {process_log_id})""" for card in cards)
     return sql_stmt
 
-
 def upload_cards_to_destanation(connection, sql_stmt):
     """Upload cards to target DB."""
     
@@ -66,7 +65,7 @@ def upload_cards_to_destanation(connection, sql_stmt):
         cursor.execute(sql_stmt)
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
-    
+
 def write_process_log_start(cursor):
     """Write process log."""
     
@@ -94,7 +93,7 @@ def write_process_log_end(cursor, process_log_id):
     )
     return process_log_id
 
-def write_event_log(cursor, event_desc, status, process_log_id):
+def write_event_log(cursor, process_log_id, event_desc, status):
     """Write event log."""
     
     cursor.execute(
@@ -106,10 +105,10 @@ def write_event_log(cursor, event_desc, status, process_log_id):
         """
     )
 
-def get_process_start_time(cursor):
+def get_process_start_time(cursor, process_log_id):
     """Get process start time."""
     
-    cursor.execute(f"select getdate();")
+    cursor.execute(f"select start_date from [Landing].[dbo].[process_log] where process_log_id = {process_log_id}")
     process_start_time = str(cursor.fetchone()[0])[:-3]
     return process_start_time
 
@@ -142,33 +141,33 @@ def main():
 
         process_log_id = write_process_log_start(dest_cur)
         
-        process_start_time = get_process_start_time(source_cur)
-        write_event_log(dest_cur, f"Timestamp from source DB start of full upload:{process_start_time}", "START", process_log_id)
+        process_start_time = get_process_start_time(dest_cur, process_log_id)
+        write_event_log(dest_cur, process_log_id, f"Timestamp start of full upload:{process_start_time}", "START")
         
         print(f"{time.strftime('%X', time.gmtime())}, Getting information to calculate the number of batches")
-        write_event_log(dest_cur, "Getting information to calculate the number of batches", "INFO", process_log_id)
+        write_event_log(dest_cur, process_log_id, "Getting information to calculate the number of batches", "INFO")
         max_ads_id = get_max_ads_id(source_cur, process_start_time)
         
         batch_size = configs["batch_size"]
         number_batches = math.ceil(max_ads_id / batch_size)
         print(f"{time.strftime('%X', time.gmtime())}, For a full load, it will be necessary to process {number_batches} batches")
-        write_event_log(dest_cur, f"For a full load, it will be necessary to process {number_batches} batches", "INFO", process_log_id)
+        write_event_log(dest_cur, process_log_id, f"For a full load, it will be necessary to process {number_batches} batches", "INFO")
 
         for batch_num, ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
 
             print(f"{time.strftime('%X', time.gmtime())}, Downloading from source batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, f"Downloading from source batch #{batch_num}/{number_batches}", "INFO", process_log_id)
+            write_event_log(dest_cur, process_log_id, f"Downloading from source batch #{batch_num}/{number_batches}", "INFO")
             cards = download_cards_from_source(source_db_conx,
                                                batch_size,
                                                ads_id,
                                                process_start_time)
            
             print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO", process_log_id)
+            write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
             stmt = prepare_data_to_upload(process_log_id, cards)
             
             print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO", process_log_id)
+            write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
             upload_cards_to_destanation(dest_db_conx, stmt)
 
         write_process_log_end(dest_cur, process_log_id)
