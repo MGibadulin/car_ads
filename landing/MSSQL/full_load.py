@@ -1,4 +1,4 @@
-"""Fil load from source DB to Target DB."""
+"""Full load from source DB to Target DB."""
 
 import json
 import math
