@@ -1,6 +1,5 @@
-"""Incremental load from source DB to Target DB."""
+"""Incremental load from source DB to destination DB."""
 
-# todo Add metrics to process log
 
 import json
 import math
@@ -21,8 +20,8 @@ def get_config():
         sys.exit()
     return configs
 
-def download_cards_from_source(connection, batch_size: int, ads_id: int, process_start_time, previous_load_time):
-    """Get cards from source DB."""
+def extract_data_from_source(connection, batch_size: int, start_ads_id: int, process_start_time, previous_load_time):
+    """Extract data from source DB."""
     stmt = f"""
         select
             ads_id,
@@ -32,20 +31,20 @@ def download_cards_from_source(connection, batch_size: int, ads_id: int, process
             source_num
         from [Landing].[dbo].[ads_archive]
         where ad_status = 2
-            and ads_id between {ads_id} and {ads_id+batch_size-1}
+            and ads_id between {start_ads_id} and {start_ads_id+batch_size-1}
             and modify_date < '{process_start_time}'
             and modify_date >= '{previous_load_time}';"""
     cursor = connection.cursor(as_dict=True)
-    cards = []
+    data = []
     try:
         cursor.execute(stmt)
-        cards = cursor.fetchall()
+        data = cursor.fetchall()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
-    return cards
+    return data
 
-def prepare_data_to_upload(process_log_id, cards):
-    """Prepare data to upload."""
+def prepare_data_to_upload(process_log_id, data):
+    """Prepare data to load."""
     sql_stmt = r"""insert into [Landing].[dbo].[lnd_ads_archive] (
                      ads_id
                     ,source_id
@@ -53,15 +52,15 @@ def prepare_data_to_upload(process_log_id, cards):
                     ,card_compressed
                     ,process_log_id
                     ) values """
-    sql_stmt += ", ".join(f"""( {card['ads_id']}, 
-                      '{card['source_id']}', 
-                      '{card['card_url']}',  
-                      CONVERT(VARBINARY(MAX), '0x'+'{card['card_compressed'].hex()}', 1), 
-                      {process_log_id})""" for card in cards)
+    sql_stmt += ", ".join(f"""( {item['ads_id']}, 
+                      '{item['source_id']}', 
+                      '{item['card_url']}',  
+                      CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1), 
+                      {process_log_id})""" for item in data)
     return sql_stmt
 
-def upload_cards_to_destanation(connection, sql_stmt):
-    """Upload cards to target DB."""
+def load_data_to_destination(connection, sql_stmt):
+    """Load data to destination DB."""
     
     cursor = connection.cursor()  
     try:
@@ -154,7 +153,7 @@ def get_max_ads_id(cursor, process_start_time, previous_load_time):
     if max_ads_id[0]:
         return max_ads_id[0]
     else:
-        print("Maximum ads_id not recived. No data to incremental load")
+        print("Maximum ads_id not get. No data to incremental load")
         sys.exit()
 
 def main():
@@ -166,7 +165,7 @@ def main():
     print(f"{time.strftime('%X', time.gmtime())}, Connected to source database")
 
     dest_db_conx = pymssql.connect(**configs["target_db"], autocommit=True)
-    print(f"{time.strftime('%X', time.gmtime())}, Connected to destanation database")
+    print(f"{time.strftime('%X', time.gmtime())}, Connected to destination database")
 
     with source_db_conx, dest_db_conx:
         
@@ -187,24 +186,24 @@ def main():
         print(f"{time.strftime('%X', time.gmtime())}, For a incremental load, it will be necessary to process {number_batches} batches")
         write_event_log(dest_cur, process_log_id, f"For a incremental load, it will be necessary to process {number_batches} batches", "INFO")
 
-        for batch_num, ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
+        for batch_num, start_ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
 
-            print(f"{time.strftime('%X', time.gmtime())}, Downloading from source batch #{batch_num}/{number_batches}")
-            write_event_log(dest_cur, process_log_id, f"Downloading from source batch #{batch_num}/{number_batches}", "INFO")
-            cards = download_cards_from_source(source_db_conx,
+            print(f"{time.strftime('%X', time.gmtime())}, Extracting from source batch #{batch_num}/{number_batches}")
+            write_event_log(dest_cur, process_log_id, f"Extracting from source batch #{batch_num}/{number_batches}", "INFO")
+            cards = extract_data_from_source(source_db_conx,
                                                batch_size,
-                                               ads_id,
+                                               start_ads_id,
                                                process_start_time,
                                                previous_load_time)
            
             if cards:
-                print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
-                write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
+                print(f"{time.strftime('%X', time.gmtime())}, Prepare data for loading to destination batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Prepare data for loading to destination batch #{batch_num}/{number_batches}", "INFO")
                 stmt = prepare_data_to_upload(process_log_id, cards)
                 
-                print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
-                write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-                upload_cards_to_destanation(dest_db_conx, stmt)
+                print(f"{time.strftime('%X', time.gmtime())}, Loading to destination batch #{batch_num}/{number_batches}")
+                write_event_log(dest_cur, process_log_id, f"Loading to destination batch #{batch_num}/{number_batches}", "INFO")
+                load_data_to_destination(dest_db_conx, stmt)
             else:
                 print(f"{time.strftime('%X', time.gmtime())}, Batch #{batch_num}/{number_batches} is empty, go on to the next one")
                 write_event_log(dest_cur, process_log_id, f"Batch #{batch_num}/{number_batches} is empty, go on to the next one", "INFO")
