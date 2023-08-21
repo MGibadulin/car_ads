@@ -5,7 +5,7 @@
         "password": "",
         "database": ""
     },
-    "target_db": {
+    "dest_db": {
         "host": "",
         "user": "",
         "password": "",
