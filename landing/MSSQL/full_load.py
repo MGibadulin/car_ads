@@ -6,6 +6,7 @@ import sys
 import time
 import pymssql
 
+# todo data_compress
 
 PROCESS_DESC = "full_load.py"
 
@@ -20,8 +21,8 @@ def get_config():
         sys.exit()
     return configs
 
-def download_cards_from_source(connection, batch_size: int, ads_id: int, process_start_time):
-    """Get cards from source DB."""
+def extract_data_from_source(connection, batch_size: int, start_ads_id: int, process_start_time):
+    """Extract data from source DB."""
     stmt = f"""
         select
             ads_id,
@@ -30,20 +31,20 @@ def download_cards_from_source(connection, batch_size: int, ads_id: int, process
             card_compressed,
             source_num
         from [Landing].[dbo].[ads_archive]
-        where ad_status = 2
-            and ads_id between {ads_id} and {ads_id+batch_size-1}
+        where ads_id between {start_ads_id} and {start_ads_id+batch_size-1}
             and modify_date < '{process_start_time}';"""
     cursor = connection.cursor(as_dict=True)
-    cards = []
+    data = []
     try:
         cursor.execute(stmt)
-        cards = cursor.fetchall()
+        data = cursor.fetchall()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
-    return cards
+    return data
 
-def prepare_data_to_upload(process_log_id, cards):
-    """Prepare data to upload."""
+def prepare_data_to_load(process_log_id, data):
+    """Prepare data to load."""
+    
     sql_stmt = r"""insert into [Landing].[dbo].[lnd_ads_archive] (
                      ads_id
                     ,source_id
@@ -51,15 +52,15 @@ def prepare_data_to_upload(process_log_id, cards):
                     ,card_compressed
                     ,process_log_id
                     ) values """
-    sql_stmt += ", ".join(f"""( {card['ads_id']}, 
-                      '{card['source_id']}', 
-                      '{card['card_url']}',  
-                      CONVERT(VARBINARY(MAX), '0x'+'{card['card_compressed'].hex()}', 1), 
-                      {process_log_id})""" for card in cards)
+    sql_stmt += ", ".join(f"""( {item['ads_id']}, 
+                      '{item['source_id']}', 
+                      '{item['card_url']}',  
+                      CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1), 
+                      {process_log_id})""" for item in data)
     return sql_stmt
 
-def upload_cards_to_destanation(connection, sql_stmt):
-    """Upload cards to target DB."""
+def load_data_to_destanation(connection, sql_stmt):
+    """Load data to destanation DB."""
     
     cursor = connection.cursor()  
     try:
@@ -118,8 +119,7 @@ def get_max_ads_id(cursor, process_start_time):
     
     stmt =  f"""select
                     max(ads_id) from [Landing].[dbo].[ads_archive] 
-                    where ad_status=2
-                    and modify_date < '{process_start_time}';"""
+                    where modify_date < '{process_start_time}';"""
     try:
         cursor.execute(stmt)
         max_ads_id = cursor.fetchone()
@@ -141,7 +141,7 @@ def main():
     source_db_conx = pymssql.connect(**configs["source_db"], autocommit=True)
     print(f"{time.strftime('%X', time.gmtime())}, Connected to source database")
 
-    dest_db_conx = pymssql.connect(**configs["target_db"], autocommit=True)
+    dest_db_conx = pymssql.connect(**configs["dest_db"], autocommit=True)
     print(f"{time.strftime('%X', time.gmtime())}, Connected to destanation database")
 
     with source_db_conx, dest_db_conx:
@@ -163,23 +163,23 @@ def main():
         print(f"{time.strftime('%X', time.gmtime())}, For a full load, it will be necessary to process {number_batches} batches")
         write_event_log(dest_cur, process_log_id, f"For a full load, it will be necessary to process {number_batches} batches", "INFO")
 
-        for batch_num, ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
+        for batch_num, start_ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
 
             print(f"{time.strftime('%X', time.gmtime())}, Downloading from source batch #{batch_num}/{number_batches}")
             write_event_log(dest_cur, process_log_id, f"Downloading from source batch #{batch_num}/{number_batches}", "INFO")
-            cards = download_cards_from_source(source_db_conx,
+            cards = extract_data_from_source(source_db_conx,
                                                batch_size,
-                                               ads_id,
+                                               start_ads_id,
                                                process_start_time)
            
             if  cards:
                 print(f"{time.strftime('%X', time.gmtime())}, Prepare data for uploading to destanation batch #{batch_num}/{number_batches}")
                 write_event_log(dest_cur, process_log_id, f"Prepare data for uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-                stmt = prepare_data_to_upload(process_log_id, cards)
+                stmt = prepare_data_to_load(process_log_id, cards)
                 
                 print(f"{time.strftime('%X', time.gmtime())}, Uploading to destanation batch #{batch_num}/{number_batches}")
                 write_event_log(dest_cur, process_log_id, f"Uploading to destanation batch #{batch_num}/{number_batches}", "INFO")
-                upload_cards_to_destanation(dest_db_conx, stmt)
+                load_data_to_destanation(dest_db_conx, stmt)
             else:
                 print(f"{time.strftime('%X', time.gmtime())}, Batch #{batch_num}/{number_batches} is empty, go on to the next one")
                 write_event_log(dest_cur, process_log_id, f"Batch #{batch_num}/{number_batches} is empty, go on to the next one", "INFO")
