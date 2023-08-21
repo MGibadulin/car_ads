@@ -1,6 +1,5 @@
 """Incremental load from source DB to destination DB."""
 
-
 import json
 import math
 import sys
@@ -19,6 +18,20 @@ def get_config():
         print("Script terminated")
         sys.exit()
     return configs
+
+def clean_destanation_db(cursor, previous_load_time):
+    """Clean destination Db from bad batches."""
+    stmt = f"""
+        delete from [Landing].[dbo].[ads_archive]
+        where insert_date >= {previous_load_time};"""
+    row_deleted = 0
+    try:
+        cursor.execute(stmt)
+        cursor.execute("select @@ROWCOUNT;")
+        row_deleted = cursor.fetchone()[0]
+    except  pymssql.Error as err:
+        print("Caught a pymssql.Error exception:", err)
+    return row_deleted
 
 def extract_data_from_source(connection, batch_size: int, start_ads_id: int, process_start_time, previous_load_time):
     """Extract data from source DB."""
@@ -172,6 +185,12 @@ def main():
         process_log_id = write_process_log_start(dest_cur)
         previous_load_time = get_previous_load_time(dest_cur, process_log_id)
         process_start_time = get_process_start_time(dest_cur, process_log_id)
+        
+        print(f"{time.strftime('%X', time.gmtime())}, Cleaning up the database of incorrectly processed batches")
+        write_event_log(dest_cur, process_log_id, "Cleaning up the database of incorrectly processed batches", "INFO")
+        rows_deleted = clean_destanation_db(dest_cur, previous_load_time)
+        print(f"{time.strftime('%X', time.gmtime())}, Rows removed during database cleanup: {rows_deleted}")
+        write_event_log(dest_cur, process_log_id, f"Rows removed during database cleanup: {rows_deleted}", "INFO")
         
         write_event_log(dest_cur, process_log_id, f"Timestamp start of incremental upload:{process_start_time}", "START")
         
