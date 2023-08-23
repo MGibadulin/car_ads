@@ -7,6 +7,7 @@ import time
 import pymssql
 
 # todo data_compress
+# todo delete data
 
 PROCESS_DESC = "full_load.py"
 
