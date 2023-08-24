@@ -1,24 +1,18 @@
 #!/bin/bash
 
 echo "------------------------------------------------------------"
-echo Create tables
+echo "Create tables"
 echo "------------------------------------------------------------"
-echo Create *process_log* table 
-sqlcmd -S localhost -U sa -P pass -i ./DDL/tables/process_log.sql
-wait
-echo Done
 
-echo "------------------------------------------------------------"
-echo Create *event_log* table 
-sqlcmd -S localhost -U sa -P pass -i ./DDL/tables/event_log.sql
-wait
-echo Done
+LIST = ./DDL/tables/process_log.sql ./DDL/tables/event_log.sql ./DDL/tables/ads_archive.sql
 
-echo "------------------------------------------------------------"
-echo Create *ads_archive* table 
-sqlcmd -S localhost -U sa -P pass -i ./DDL/tables/ads_archive.sql
-wait
-echo Done
+for ITEM in $LIST
+do
+    echo "Create table $ITEM"
+    sqlcmd -S localhost -U sa -P pass -i $ITEM
+    wait
+    echo "Done"
+done
 
 echo "------------------------------------------------------------"
 echo Starting finder.py
@@ -48,9 +42,21 @@ wait
 echo "------------------------------------------------------------"
 echo Testing full load
 echo Run SQL script get number rows from source_db.ads_archive
+RESULT_1 = $(sqlcmd -S localhost -U sa -P pass -h -1 -Q "select count(*) from source_db.ads_archive;")
+wait
+
 echo Run SQL script get number rows from landing.ads_archive
+RESULT_2 = $(sqlcmd -S localhost -U sa -P pass -h -1 -Q "select count(*) from landing.ads_archive;")
+wait
 echo Compare number of rows
-echo Test Fail or Pass
+if [ $RESULT_1 -eq $RESULT_2 ]
+then
+    echo "Test PASS"
+else
+    echo "Test FAIL"
+    exit 1
+fi
+
 
 echo "------------------------------------------------------------"
 echo Starting scraper.py
