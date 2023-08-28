@@ -14,24 +14,24 @@ do
     echo "Done"
 done
 
-echo "------------------------------------------------------------"
-echo Starting finder.py
-python3 /path_to_script/finder.py &
-echo Done
+# echo "------------------------------------------------------------"
+# echo Starting finder.py
+# python3 /path_to_script/finder.py &
+# echo Done
 
-echo "------------------------------------------------------------"
-echo Starting scraper.py
-python3 /path_to_script/scrapper.py &
-echo Done
+# echo "------------------------------------------------------------"
+# echo Starting scraper.py
+# python3 /path_to_script/scrapper.py &
+# echo Done
 
-echo "------------------------------------------------------------"
-echo Waiting 5 minutes, while scrapping data
-sleep 300 &
-echo Scrapping running in background...
-wait
+# echo "------------------------------------------------------------"
+# echo Waiting 5 minutes, while scrapping data
+# sleep 300 &
+# echo Scrapping running in background...
+# wait
 
-pkill -f finder.py
-pkill -f scraper.py
+# pkill -f finder.py
+# pkill -f scraper.py
 
 echo "------------------------------------------------------------"
 echo Starting full_load.py
@@ -58,28 +58,28 @@ else
 fi
 
 
-echo "------------------------------------------------------------"
-echo Starting scraper.py
-python3 /path_to_script/scraper.py &
-echo Done
+# echo "------------------------------------------------------------"
+# echo Starting scraper.py
+# python3 /path_to_script/scraper.py &
+# echo Done
 
-echo "------------------------------------------------------------"
-echo Waiting 5 minutes, while scrapping new data
-sleep 300 &
-echo Scrapping running in background...
-wait
+# echo "------------------------------------------------------------"
+# echo Waiting 5 minutes, while scrapping new data
+# sleep 300 &
+# echo Scrapping running in background...
+# wait
 
-pkill -f scrapper.py
+# pkill -f scrapper.py
 
-echo "------------------------------------------------------------"
-echo Starting incremental_load.py
-python3 ../incremental_load.py &
-echo Incremental load running in background...
-wait
+# echo "------------------------------------------------------------"
+# echo Starting incremental_load.py
+# python3 ../incremental_load.py &
+# echo Incremental load running in background...
+# wait
 
-echo "------------------------------------------------------------"
-echo Testing incremental load
-echo Run SQL script get number rows from source_db.ads_archive
-echo Run SQL script get number rows from landing.ads_archive
-echo Compare number of rows
-echo Test Fail or Pass
+# echo "------------------------------------------------------------"
+# echo Testing incremental load
+# echo Run SQL script get number rows from source_db.ads_archive
+# echo Run SQL script get number rows from landing.ads_archive
+# echo Compare number of rows
+# echo Test Fail or Pass
