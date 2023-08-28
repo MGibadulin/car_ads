@@ -35,7 +35,7 @@ def extract_data_from_source(connection, batch_size: int, start_ads_id: int, pro
             card_url,
             card_compressed,
             source_num
-        from [Landing].[dbo].[ads_archive]
+        from [car_ads_training_db].[dbo].[ads_archive]
         where ads_id between {start_ads_id} and {start_ads_id+batch_size-1}
             and modify_date < '{process_start_time}';"""
     cursor = connection.cursor(as_dict=True)
@@ -123,7 +123,7 @@ def get_max_ads_id(cursor, process_start_time):
     """Get max ads_id."""
     
     stmt =  f"""select
-                    max(ads_id) from [Landing].[dbo].[ads_archive] 
+                    max(ads_id) from [car_ads_training_db].[dbo].[ads_archive] 
                     where modify_date < '{process_start_time}';"""
     try:
         cursor.execute(stmt)
