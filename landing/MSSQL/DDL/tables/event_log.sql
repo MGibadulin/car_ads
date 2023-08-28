@@ -1,5 +1,5 @@
-USE [Landing]
-GO
+IF OBJECT_ID('Landing.dbo.event_log', 'U') IS NOT NULL
+DROP TABLE Landing.dbo.event_log
 
 CREATE TABLE Landing.dbo.event_log (
 	event_log_id int IDENTITY(1,1) NOT NULL,

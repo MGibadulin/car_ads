@@ -1,5 +1,5 @@
-USE [Landing]
-GO
+IF OBJECT_ID('Landing.dbo.lnd_ads_archive', 'U') IS NOT NULL
+DROP TABLE Landing.dbo.lnd_ads_archive
 
 CREATE TABLE Landing.dbo.lnd_ads_archive (
 	ads_id int NOT NULL,
