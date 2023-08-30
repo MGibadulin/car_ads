@@ -6,7 +6,7 @@ import sys
 import time
 import pymssql
 
-PROCESS_DESC = "incremental_load.py"
+PROCESS_DESC = "mssql_incremental_load.py"
 
 def get_config():
     """Load config data."""
