@@ -4,15 +4,18 @@ echo "------------------------------------------------------------"
 echo "Create tables"
 echo "------------------------------------------------------------"
 
-LIST=("../DDL/tables/process_log.sql" "../DDL/tables/event_log.sql" "../DDL/tables/lnd_ads_archive.sql")
-
+#LIST=("../DDL/tables/process_log.sql" "../DDL/tables/event_log.sql" "../DDL/tables/lnd_ads_archive.sql")
+LIST=("../DDL/tables/lnd_ads_archive.sql")
 for ITEM in ${LIST[@]}
 do
     echo "Create table $ITEM"
-    sqlcmd -S "server_ip,1434" -U sa -P pass -i $ITEM
+    sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -i $ITEM
     wait
     echo "Done"
 done
+
+# how to check that the sqlcmd was executed without errors
+# May use test table?
 
 # echo "------------------------------------------------------------"
 # echo Starting finder.py
@@ -41,15 +44,23 @@ wait
 
 echo "------------------------------------------------------------"
 echo Testing full load
+
 echo Run SQL script get number rows from car_ads_training_db.dbo.ads_archive
-RESULT_1 = $(sqlcmd -S "server_ip,1434" -U sa -P pass -h -1 -Q "select count(*) from car_ads_training_db.dbo.ads_archive;")
+RESULT_1=$(sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -h -1 -W -i get_count_car_ads_training.sql)
 wait
+CNT_ROW_SOURCE="${RESULT_1//[^0-9]/}"
+echo "Rows in car_ads_training_db.dbo.ads_archive: $CNT_ROW_SOURCE"
+
 
 echo Run SQL script get number rows from Landing.dbo.lnd_ads_archive
-RESULT_2 = $(sqlcmd -S "server_ip,1434" -U sa -P pass -h -1 -Q "select count(*) from Landing.dbo.lnd_ads_archive;")
+RESULT_2=$(sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -h -1 -W -i get_count_landing.sql)
 wait
-echo Compare number of rows
-if [ $RESULT_1 -eq $RESULT_2 ]
+CNT_ROW_DEST="${RESULT_2//[^0-9]/}"
+echo "Rows in Landing.dbo.lnd_ads_archive: $CNT_ROW_DEST"
+
+
+echo "Compare number of rows"
+if [ $CNT_ROW_SOURCE -eq $CNT_ROW_DEST ]
 then
     echo "Test PASS"
 else
