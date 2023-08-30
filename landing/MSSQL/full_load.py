@@ -57,6 +57,7 @@ def prepare_data_to_load(process_log_id, data):
                     ,card_compressed
                     ,process_log_id
                     ) values """
+    data = [item for item in data if item['card_compressed'] is not None]
     sql_stmt += ", ".join(f"""( {item['ads_id']}, 
                       '{item['source_id']}', 
                       '{item['card_url']}',  
