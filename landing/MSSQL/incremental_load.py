@@ -26,7 +26,7 @@ def get_config():
 def clean_destanation_db(cursor, previous_load_time):
     """Clean destination Db from bad batches."""
     stmt = f"""
-        delete from [Landing].[dbo].[ads_archive]
+        delete from [Landing].[dbo].[lnd_ads_archive]
         where insert_date >= {previous_load_time};"""
     row_deleted = 0
     try:
