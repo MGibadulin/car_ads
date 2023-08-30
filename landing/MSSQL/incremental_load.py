@@ -2,6 +2,7 @@
 
 import json
 import math
+from pathlib import Path
 import sys
 import time
 import pymssql
@@ -10,8 +11,11 @@ PROCESS_DESC = "mssql_incremental_load.py"
 
 def get_config():
     """Load config data."""
+    
+    file_path = Path(__file__).resolve().parents[0]
+
     try:
-        with open("./config.json", encoding='utf8') as config_file:
+        with open(file_path.joinpath("config.json"), encoding='utf8') as config_file:
             configs = json.load(config_file)
     except OSError as err:
         print("File config.json not found", err)
