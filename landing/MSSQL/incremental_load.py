@@ -59,8 +59,9 @@ def extract_data_from_source(connection, batch_size: int, start_ads_id: int, pro
         print("Caught a pymssql.Error exception:", err)
     return data
 
-def prepare_data_to_upload(process_log_id, data):
+def prepare_data_to_load(process_log_id, data):
     """Prepare data to load."""
+    
     sql_stmt = r"""insert into [Landing].[dbo].[lnd_ads_archive] (
                      ads_id
                     ,source_id
@@ -68,11 +69,21 @@ def prepare_data_to_upload(process_log_id, data):
                     ,card_compressed
                     ,process_log_id
                     ) values """
+    data_compressed = [item for item in data if item['card_compressed'] is not None]
     sql_stmt += ", ".join(f"""( {item['ads_id']}, 
                       '{item['source_id']}', 
                       '{item['card_url']}',  
-                      CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1), 
-                      {process_log_id})""" for item in data)
+                      CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1),
+                      {process_log_id})""" for item in data_compressed)
+    if data_compressed:
+        sql_stmt += ", "
+        
+    data_null = [item for item in data if item['card_compressed'] is None]
+    sql_stmt += ", ".join(f"""( {item['ads_id']}, 
+                      '{item['source_id']}', 
+                      '{item['card_url']}',  
+                      NULL, 
+                      {process_log_id})""" for item in data_null)
     return sql_stmt
 
 def load_data_to_destination(connection, sql_stmt):
