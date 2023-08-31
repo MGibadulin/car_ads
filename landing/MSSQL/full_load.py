@@ -45,6 +45,8 @@ def extract_data_from_source(connection, batch_size: int, start_ads_id: int, pro
         data = cursor.fetchall()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
+        sys.exit()
     return data
 
 def prepare_data_to_load(process_log_id, data):
@@ -82,6 +84,8 @@ def load_data_to_destination(connection, sql_stmt):
         cursor.execute(sql_stmt)
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
+        sys.exit()
 
 def write_process_log_start(cursor):
     """Write process log."""
@@ -146,6 +150,7 @@ def get_max_ads_id(cursor, process_start_time):
         return max_ads_id[0]
     else:
         print("Maximum ads_id not recived. No data to full load")
+        print("Script terminated")
         sys.exit()
         
 def main():
@@ -163,10 +168,9 @@ def main():
         
         source_cur = source_db_conx.cursor()
         dest_cur = dest_db_conx.cursor()
-
         process_log_id = write_process_log_start(dest_cur)
-        
         process_start_time = get_process_start_time(dest_cur, process_log_id)
+        
         write_event_log(dest_cur, process_log_id, f"Timestamp start of full upload:{process_start_time}", "START")
         
         print(f"{time.strftime('%X', time.gmtime())}, Getting information to calculate the number of batches")
