@@ -27,7 +27,7 @@ def clean_destanation_db(cursor, previous_load_time):
     """Clean destination Db from bad batches."""
     stmt = f"""
         delete from [Landing].[dbo].[lnd_ads_archive]
-        where insert_date >= {previous_load_time};"""
+        where insert_date >= '{previous_load_time}';"""
     row_deleted = 0
     try:
         cursor.execute(stmt)
@@ -151,10 +151,10 @@ def get_previous_load_time(cursor, process_log_id):
     """Get previous load time."""
     try:
         cursor.execute(f"""
-                    select max(start_date) 
+                    select max(end_date) 
                     from [Landing].[dbo].[process_log] 
                     where process_log_id < {process_log_id}
-                    and (process_desc = 'full_load.py' or process_desc = 'incremental_load.py')
+                    and (process_desc = 'mssql_full_load.py' or process_desc = 'mssql_incremental_load.py')
                     and end_date IS NOT NULL;""")
         previous_load_time = cursor.fetchone()
     except  pymssql.Error as err:
@@ -200,7 +200,7 @@ def main():
     source_db_conx = pymssql.connect(**configs["source_db"], autocommit=True)
     print(f"{time.strftime('%X', time.gmtime())}, Connected to source database")
 
-    dest_db_conx = pymssql.connect(**configs["target_db"], autocommit=True)
+    dest_db_conx = pymssql.connect(**configs["dest_db"], autocommit=True)
     print(f"{time.strftime('%X', time.gmtime())}, Connected to destination database")
 
     with source_db_conx, dest_db_conx:
@@ -241,7 +241,7 @@ def main():
             if cards:
                 print(f"{time.strftime('%X', time.gmtime())}, Prepare data for loading to destination batch #{batch_num}/{number_batches}")
                 write_event_log(dest_cur, process_log_id, f"Prepare data for loading to destination batch #{batch_num}/{number_batches}", "INFO")
-                stmt = prepare_data_to_upload(process_log_id, cards)
+                stmt = prepare_data_to_load(process_log_id, cards)
                 
                 print(f"{time.strftime('%X', time.gmtime())}, Loading to destination batch #{batch_num}/{number_batches}")
                 write_event_log(dest_cur, process_log_id, f"Loading to destination batch #{batch_num}/{number_batches}", "INFO")
