@@ -35,6 +35,8 @@ def clean_destanation_db(cursor, previous_load_time):
         row_deleted = cursor.fetchone()[0]
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
+        sys.exit()
     return row_deleted
 
 def extract_data_from_source(connection, batch_size: int, start_ads_id: int, process_start_time, previous_load_time):
@@ -57,6 +59,8 @@ def extract_data_from_source(connection, batch_size: int, start_ads_id: int, pro
         data = cursor.fetchall()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
+        sys.exit()
     return data
 
 def prepare_data_to_load(process_log_id, data):
@@ -94,6 +98,8 @@ def load_data_to_destination(connection, sql_stmt):
         cursor.execute(sql_stmt)
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
+        sys.exit()
 
 def write_process_log_start(cursor):
     """Write process log."""
@@ -153,6 +159,7 @@ def get_previous_load_time(cursor, process_log_id):
         previous_load_time = cursor.fetchone()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
         sys.exit()
 
     if previous_load_time[0]:
@@ -160,6 +167,7 @@ def get_previous_load_time(cursor, process_log_id):
         return previous_load_time
     else:
         print("Information about previous downloads was not found.")
+        print("Script terminated")
         sys.exit()
 
 def get_max_ads_id(cursor, process_start_time, previous_load_time):
@@ -174,12 +182,14 @@ def get_max_ads_id(cursor, process_start_time, previous_load_time):
         max_ads_id = cursor.fetchone()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
+        print("Script terminated")
         sys.exit()
         
     if max_ads_id[0]:
         return max_ads_id[0]
     else:
         print("Maximum ads_id not get. No data to incremental load")
+        print("Script terminated")
         sys.exit()
 
 def main():
