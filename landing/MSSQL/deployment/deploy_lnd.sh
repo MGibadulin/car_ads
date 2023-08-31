@@ -9,7 +9,7 @@ LIST=("../DDL/tables/lnd_ads_archive.sql")
 for ITEM in ${LIST[@]}
 do
     echo "Create table $ITEM"
-    sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -i $ITEM
+    sqlcmd -S "srv,1434" -U sa -P pass -i $ITEM
     wait
     echo "Done"
 done
@@ -46,14 +46,14 @@ echo "------------------------------------------------------------"
 echo Testing full load
 
 echo Run SQL script get number rows from car_ads_training_db.dbo.ads_archive
-RESULT_1=$(sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -h -1 -W -i get_count_car_ads_training.sql)
+RESULT_1=$(sqlcmd -S "srv,1434" -U sa -P pass -h -1 -W -i get_count_car_ads_training.sql)
 wait
 CNT_ROW_SOURCE="${RESULT_1//[^0-9]/}"
 echo "Rows in car_ads_training_db.dbo.ads_archive: $CNT_ROW_SOURCE"
 
 
 echo Run SQL script get number rows from Landing.dbo.lnd_ads_archive
-RESULT_2=$(sqlcmd -S "104.197.54.154,1434" -U sa -P CARadspass2308 -h -1 -W -i get_count_landing.sql)
+RESULT_2=$(sqlcmd -S "srv,1434" -U sa -P pass -h -1 -W -i get_count_landing.sql)
 wait
 CNT_ROW_DEST="${RESULT_2//[^0-9]/}"
 echo "Rows in Landing.dbo.lnd_ads_archive: $CNT_ROW_DEST"
@@ -82,15 +82,26 @@ fi
 
 # pkill -f scrapper.py
 
-# echo "------------------------------------------------------------"
-# echo Starting incremental_load.py
-# python3 ../incremental_load.py &
-# echo Incremental load running in background...
-# wait
+echo "------------------------------------------------------------"
+echo Starting incremental_load.py
+python3 ../incremental_load.py &
+echo Incremental load running in background...
+wait
 
-# echo "------------------------------------------------------------"
-# echo Testing incremental load
-# echo Run SQL script get number rows from source_db.ads_archive
-# echo Run SQL script get number rows from landing.ads_archive
-# echo Compare number of rows
-# echo Test Fail or Pass
+
+
+echo "------------------------------------------------------------"
+echo Testing incremental load
+
+echo Run SQL script get number new rows from car_ads_training_db.dbo.ads_archive
+RESULT_1=$(sqlcmd -S "srv,1434" -U sa -P pass -h -1 -W -i get_count_car_ads_training.sql)
+wait
+CNT_ROW_SOURCE="${RESULT_1//[^0-9]/}"
+echo "Rows in car_ads_training_db.dbo.ads_archive: $CNT_ROW_SOURCE"
+
+
+echo Run SQL script get number rows from Landing.dbo.lnd_ads_archive
+RESULT_2=$(sqlcmd -S "srv,1434" -U sa -P pass -h -1 -W -i get_count_landing.sql)
+wait
+CNT_ROW_DEST="${RESULT_2//[^0-9]/}"
+echo "Rows in Landing.dbo.lnd_ads_archive: $CNT_ROW_DEST"
