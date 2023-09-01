@@ -26,7 +26,7 @@ def get_config():
         sys.exit()
     return configs
 
-def extract_data_from_source(connection, batch_size: int, start_ads_id: int, process_start_time):
+def extract_data_from_source(cursor):
     """Extract data from source DB."""
     stmt = f"""
         select
@@ -34,20 +34,16 @@ def extract_data_from_source(connection, batch_size: int, start_ads_id: int, pro
             source_id,
             card_url,
             card_compressed,
-            source_num
-        from [car_ads_training_db].[dbo].[ads_archive]
-        where ads_id between {start_ads_id} and {start_ads_id+batch_size-1}
-            and modify_date < '{process_start_time}';"""
-    cursor = connection.cursor(as_dict=True)
-    data = []
+            modify_date
+        from [car_ads_training_db].[dbo].[ads_archive];"""
+
     try:
         cursor.execute(stmt)
-        data = cursor.fetchall()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
         print("Script terminated")
         sys.exit()
-    return data
+
 
 def prepare_data_to_load(process_log_id, data):
     """Prepare data to load."""
@@ -57,6 +53,7 @@ def prepare_data_to_load(process_log_id, data):
                     ,source_id
                     ,card_url
                     ,card_compressed
+                    ,source_date
                     ,process_log_id
                     ) values """
     data_compressed = [item for item in data if item['card_compressed'] is not None]
@@ -64,6 +61,7 @@ def prepare_data_to_load(process_log_id, data):
                       '{item['source_id']}', 
                       '{item['card_url']}',  
                       CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1),
+                      '{str(item['modify_date'])[:-3]}',
                       {process_log_id})""" for item in data_compressed)
     if data_compressed:
         sql_stmt += ", "
@@ -72,14 +70,14 @@ def prepare_data_to_load(process_log_id, data):
     sql_stmt += ", ".join(f"""( {item['ads_id']}, 
                       '{item['source_id']}', 
                       '{item['card_url']}',  
-                      NULL, 
+                      NULL,
+                      '{str(item['modify_date'])[:-3]}',
                       {process_log_id})""" for item in data_null)
     return sql_stmt
 
-def load_data_to_destination(connection, sql_stmt):
+def load_data_to_destination(cursor, sql_stmt):
     """Load data to destination DB."""
     
-    cursor = connection.cursor()  
     try:
         cursor.execute(sql_stmt)
     except  pymssql.Error as err:
@@ -133,23 +131,21 @@ def get_process_start_time(cursor, process_log_id):
     process_start_time = str(cursor.fetchone()[0])[:-3]
     return process_start_time
 
-def get_max_ads_id(cursor, process_start_time):
-    """Get max ads_id."""
+def get_cnt_extract_rows(cursor):
+    """Get number rows to extract from source DB."""
     
-    stmt =  f"""select
-                    max(ads_id) from [car_ads_training_db].[dbo].[ads_archive] 
-                    where modify_date < '{process_start_time}';"""
+    stmt =  f"""select count(*) as cnt from [car_ads_training_db].[dbo].[ads_archive];"""
     try:
         cursor.execute(stmt)
-        max_ads_id = cursor.fetchone()
+        cnt_extract_rows = cursor.fetchone()
     except  pymssql.Error as err:
         print("Caught a pymssql.Error exception:", err)
         sys.exit()
         
-    if max_ads_id[0]:
-        return max_ads_id[0]
+    if cnt_extract_rows['cnt']:
+        return cnt_extract_rows['cnt']
     else:
-        print("Maximum ads_id not recived. No data to full load")
+        print("The number of rows in the table is not received. No data to full load")
         print("Script terminated")
         sys.exit()
         
@@ -166,7 +162,7 @@ def main():
 
     with source_db_conx, dest_db_conx:
         
-        source_cur = source_db_conx.cursor()
+        source_cur = source_db_conx.cursor(as_dict=True)
         dest_cur = dest_db_conx.cursor()
         process_log_id = write_process_log_start(dest_cur)
         process_start_time = get_process_start_time(dest_cur, process_log_id)
@@ -175,33 +171,28 @@ def main():
         
         print(f"{time.strftime('%X', time.gmtime())}, Getting information to calculate the number of batches")
         write_event_log(dest_cur, process_log_id, "Getting information to calculate the number of batches", "INFO")
-        max_ads_id = get_max_ads_id(source_cur, process_start_time)
+        cnt_extract_rows = get_cnt_extract_rows(source_cur)
         
         batch_size = configs["batch_size"]
-        number_batches = math.ceil(max_ads_id / batch_size)
+        number_batches = math.ceil(cnt_extract_rows / batch_size)
         print(f"{time.strftime('%X', time.gmtime())}, For a full load, it will be necessary to process {number_batches} batches")
         write_event_log(dest_cur, process_log_id, f"For a full load, it will be necessary to process {number_batches} batches", "INFO")
 
-        for batch_num, start_ads_id in enumerate(range(1, max_ads_id + 1, batch_size), start=1):
+        extract_data_from_source(source_cur)
+        
+        for batch_num in range(1, number_batches + 1):
 
             print(f"{time.strftime('%X', time.gmtime())}, Extracting from source batch #{batch_num}/{number_batches}")
             write_event_log(dest_cur, process_log_id, f"Extracting from source batch #{batch_num}/{number_batches}", "INFO")
-            cards = extract_data_from_source(source_db_conx,
-                                               batch_size,
-                                               start_ads_id,
-                                               process_start_time)
-           
-            if  cards:
-                print(f"{time.strftime('%X', time.gmtime())}, Prepare data for loading to destination batch #{batch_num}/{number_batches}")
-                write_event_log(dest_cur, process_log_id, f"Prepare data for loading to destination batch #{batch_num}/{number_batches}", "INFO")
-                stmt = prepare_data_to_load(process_log_id, cards)
-                
-                print(f"{time.strftime('%X', time.gmtime())}, Loading to destination batch #{batch_num}/{number_batches}")
-                write_event_log(dest_cur, process_log_id, f"Loading to destination batch #{batch_num}/{number_batches}", "INFO")
-                load_data_to_destination(dest_db_conx, stmt)
-            else:
-                print(f"{time.strftime('%X', time.gmtime())}, Batch #{batch_num}/{number_batches} is empty, go on to the next one")
-                write_event_log(dest_cur, process_log_id, f"Batch #{batch_num}/{number_batches} is empty, go on to the next one", "INFO")
+            cards = source_cur.fetchmany(batch_size)
+
+            print(f"{time.strftime('%X', time.gmtime())}, Prepare data for loading to destination batch #{batch_num}/{number_batches}")
+            write_event_log(dest_cur, process_log_id, f"Prepare data for loading to destination batch #{batch_num}/{number_batches}", "INFO")
+            stmt = prepare_data_to_load(process_log_id, cards)
+            
+            print(f"{time.strftime('%X', time.gmtime())}, Loading to destination batch #{batch_num}/{number_batches}")
+            write_event_log(dest_cur, process_log_id, f"Loading to destination batch #{batch_num}/{number_batches}", "INFO")
+            load_data_to_destination(dest_cur, stmt)
 
         write_process_log_end(dest_cur, process_log_id)
 
