@@ -10,8 +10,8 @@ import pymssql
 # todo data_compress
 # todo delete data
 
-PROCESS_DESC = "mssql_full_load.py"
-SOURCE_DB =         "[car_ads_training_db].[dbo].[ads_archive]"
+PROCESS_DESC =      "mssql_full_load.py"
+SOURCE_DB =         "[Landing].[dbo].[ads_archive_test]"
 DEST_DB =           "[Landing].[dbo].[lnd_ads_archive]"
 PROCESS_LOG_DB =    "[Landing].[dbo].[process_log]"
 EVENT_LOG_DB =      "[Landing].[dbo].[event_log]"
@@ -61,22 +61,27 @@ def prepare_data_to_load(process_log_id, data):
                     ,process_log_id
                     ) values """
     data_compressed = [item for item in data if item['card_compressed'] is not None]
-    sql_stmt += ", ".join(f"""( {item['ads_id']}, 
+    
+    if data_compressed:
+        sql_stmt += ", ".join(f"""( {item['ads_id']}, 
                       '{item['source_id']}', 
                       '{item['card_url']}',  
                       CONVERT(VARBINARY(MAX), '0x'+'{item['card_compressed'].hex()}', 1),
                       '{str(item['modify_date'])[:-3]}',
                       {process_log_id})""" for item in data_compressed)
-    if data_compressed:
-        sql_stmt += ", "
+
         
     data_null = [item for item in data if item['card_compressed'] is None]
-    sql_stmt += ", ".join(f"""( {item['ads_id']}, 
-                      '{item['source_id']}', 
-                      '{item['card_url']}',  
-                      NULL,
-                      '{str(item['modify_date'])[:-3]}',
-                      {process_log_id})""" for item in data_null)
+    if data_null:
+        if data_compressed:
+            sql_stmt += ", "
+        
+        sql_stmt += ", ".join(f"""( {item['ads_id']}, 
+                        '{item['source_id']}', 
+                        '{item['card_url']}',  
+                        NULL,
+                        '{str(item['modify_date'])[:-3]}',
+                        {process_log_id})""" for item in data_null)
     return sql_stmt
 
 def load_data_to_destination(cursor, sql_stmt):
