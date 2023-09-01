@@ -11,6 +11,11 @@ import pymssql
 # todo delete data
 
 PROCESS_DESC = "mssql_full_load.py"
+SOURCE_DB =         "[car_ads_training_db].[dbo].[ads_archive]"
+DEST_DB =           "[Landing].[dbo].[lnd_ads_archive]"
+PROCESS_LOG_DB =    "[Landing].[dbo].[process_log]"
+EVENT_LOG_DB =      "[Landing].[dbo].[event_log]"
+
 
 def get_config():
     """Load config data."""
@@ -35,7 +40,7 @@ def extract_data_from_source(cursor):
             card_url,
             card_compressed,
             modify_date
-        from [car_ads_training_db].[dbo].[ads_archive];"""
+        from {SOURCE_DB};"""
 
     try:
         cursor.execute(stmt)
@@ -44,11 +49,10 @@ def extract_data_from_source(cursor):
         print("Script terminated")
         sys.exit()
 
-
 def prepare_data_to_load(process_log_id, data):
     """Prepare data to load."""
     
-    sql_stmt = r"""insert into [Landing].[dbo].[lnd_ads_archive] (
+    sql_stmt = fr"""insert into {DEST_DB} (
                      ads_id
                     ,source_id
                     ,card_url
@@ -91,7 +95,7 @@ def write_process_log_start(cursor):
     process_log_id = None
     cursor.execute(
         f"""
-            insert into [Landing].[dbo].[process_log] (process_desc, [user], host, connection_id)         
+            insert into {PROCESS_LOG_DB} (process_desc, [user], host, connection_id)         
             select '{PROCESS_DESC}', 
                     SYSTEM_USER, 
                     HOST_NAME(),
@@ -105,7 +109,7 @@ def write_process_log_start(cursor):
 def write_process_log_end(cursor, process_log_id):
     cursor.execute(
         f"""
-            update [Landing].[dbo].[process_log] 
+            update {PROCESS_LOG_DB}
                 set end_date = getdate() 
             where process_log_id = {process_log_id};
         """
@@ -117,7 +121,7 @@ def write_event_log(cursor, process_log_id, event_desc, status):
     
     cursor.execute(
         f"""
-            insert into [Landing].[dbo].[event_log] (event_desc, status, process_log_id)         
+            insert into {EVENT_LOG_DB} (event_desc, status, process_log_id)         
             select  '{event_desc}', 
                     '{status}', 
                     '{process_log_id}';
@@ -127,14 +131,14 @@ def write_event_log(cursor, process_log_id, event_desc, status):
 def get_process_start_time(cursor, process_log_id):
     """Get process start time."""
     
-    cursor.execute(f"select start_date from [Landing].[dbo].[process_log] where process_log_id = {process_log_id}")
+    cursor.execute(f"select start_date from {PROCESS_LOG_DB} where process_log_id = {process_log_id}")
     process_start_time = str(cursor.fetchone()[0])[:-3]
     return process_start_time
 
 def get_cnt_extract_rows(cursor):
     """Get number rows to extract from source DB."""
     
-    stmt =  f"""select count(*) as cnt from [car_ads_training_db].[dbo].[ads_archive];"""
+    stmt =  f"""select count(*) as cnt from {SOURCE_DB};"""
     try:
         cursor.execute(stmt)
         cnt_extract_rows = cursor.fetchone()
